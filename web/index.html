@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Solar System Simulator — Newtonian, interactive</title>
+<style>
+  :root {
+    --bg: #05070d;
+    --panel: #0e1320;
+    --panel-2: #141b2d;
+    --line: #243049;
+    --text: #cfd6e4;
+    --muted: #7d8aa5;
+    --accent: #4f8fe0;
+    --total: #ff5f5f;
+    --annular: #ffb347;
+    --partial: #8ab4ff;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    overflow: hidden;
+  }
+
+  #app {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    height: 100vh;
+  }
+
+  /* --- canvas stage --- */
+  #stage { position: relative; }
+
+  canvas#view {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: default;
+  }
+
+  /* --- HUD overlay (top-left) --- */
+  #hud {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    background: rgba(14, 19, 32, 0.82);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    line-height: 1.7;
+    backdrop-filter: blur(4px);
+    min-width: 220px;
+  }
+  #hud .row { display: flex; justify-content: space-between; gap: 16px; }
+  #hud .label { color: var(--muted); }
+  #hud .val { font-variant-numeric: tabular-nums; }
+  #hud-date { font-size: 14px; font-weight: 600; color: #fff; }
+  #hud-align.eclipse-now {
+    color: #fff;
+    font-weight: 700;
+    text-shadow: 0 0 8px var(--total);
+  }
+
+  #hint {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    font-size: 11px;
+    color: var(--muted);
+    background: rgba(14, 19, 32, 0.7);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 10px;
+    max-width: 60%;
+  }
+  #hint b { color: var(--text); font-weight: 600; }
+
+  /* --- control panel (right) --- */
+  #panel {
+    background: var(--panel);
+    border-left: 1px solid var(--line);
+    padding: 16px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  h1 { font-size: 15px; margin: 0; letter-spacing: 0.3px; }
+  h1 small { display: block; color: var(--muted); font-weight: 400; font-size: 11px; margin-top: 3px; }
+
+  .group { display: flex; flex-direction: column; gap: 8px; }
+  .group h2 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--muted);
+    margin: 0 0 2px;
+    font-weight: 600;
+  }
+
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  button, select {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 7px 11px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  button:hover, select:hover { border-color: var(--accent); }
+  button.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #06101e;
+    font-weight: 600;
+  }
+  select { width: 100%; }
+
+  label.field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+  label.check { display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; }
+  label.check input { accent-color: var(--accent); }
+
+  /* --- eclipse log --- */
+  #eclipse-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 38vh;
+    overflow-y: auto;
+  }
+  #eclipse-list li {
+    display: grid;
+    grid-template-columns: 56px 1fr auto;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    padding: 4px 6px;
+    background: var(--panel-2);
+    border-radius: 5px;
+  }
+  #eclipse-list li.muted { display: block; color: var(--muted); background: none; }
+  .kind { font-size: 10px; text-transform: uppercase; font-weight: 700; text-align: center; border-radius: 3px; padding: 2px 0; }
+  .k-total { background: rgba(255,95,95,0.18); color: var(--total); }
+  .k-annular { background: rgba(255,179,71,0.18); color: var(--annular); }
+  .k-partial { background: rgba(138,180,255,0.16); color: var(--partial); }
+  .when { font-variant-numeric: tabular-nums; }
+  .mag { color: var(--muted); font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <canvas id="view"></canvas>
+
+    <div id="hud">
+      <div id="hud-date">—</div>
+      <div class="row"><span class="label">time</span><span class="val" id="hud-speed">—</span></div>
+      <div class="row"><span class="label">Sun–Moon</span><span class="val" id="hud-align">—</span></div>
+      <div class="row"><span class="label">energy drift</span><span class="val" id="hud-energy">—</span></div>
+      <div class="row"><span class="label">L drift</span><span class="val" id="hud-angmom">—</span></div>
+    </div>
+
+    <div id="hint">
+      <b>Left-drag</b> orbit · <b>right-drag</b> pan · <b>wheel</b> zoom · <b>click</b> a body to focus.
+      Turn on <b>Hand mode</b> to grab a planet, drag to reposition, and flick to set its velocity — then watch gravity take over.
+    </div>
+  </div>
+
+  <div id="panel">
+    <h1>Solar System Simulator
+      <small>Newtonian gravity from first principles · seeded at J2000.0 from JPL Horizons · velocity-Verlet</small>
+    </h1>
+
+    <div class="group">
+      <h2>Time</h2>
+      <div class="btn-row">
+        <button id="btn-play">❚❚ Pause</button>
+        <button id="btn-reverse">⇄ Reverse</button>
+        <button id="btn-reset">↺ Reset to J2000</button>
+      </div>
+      <label class="field">
+        Speed (integrator steps / frame)
+        <input type="range" id="speed" min="1" max="200" value="20" />
+      </label>
+    </div>
+
+    <div class="group">
+      <h2>Camera</h2>
+      <label class="field">
+        Focus on
+        <select id="focus-select"></select>
+      </label>
+      <label class="check"><input type="checkbox" id="chk-trails" checked /> Orbital trails</label>
+      <label class="check"><input type="checkbox" id="chk-labels" checked /> Labels</label>
+    </div>
+
+    <div class="group">
+      <h2>Hand of god</h2>
+      <div class="btn-row">
+        <button id="btn-hand">✋ Hand mode</button>
+      </div>
+      <span style="font-size:11px;color:var(--muted)">
+        When on, drag a body to move it; release with a flick to launch it. The
+        simulation re-derives every orbit from the new state.
+      </span>
+    </div>
+
+    <div class="group">
+      <h2>Predicted solar eclipses</h2>
+      <ul id="eclipse-list">
+        <li class="muted">none yet — run forward in time</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="./main.js"></script>
+</body>
+</html>
