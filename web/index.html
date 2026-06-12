@@ -83,6 +83,61 @@
   }
   #hint b { color: var(--text); font-weight: 600; }
 
+  /* --- webcam preview (bottom-right) --- */
+  #cam-wrap {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    width: 240px;
+    height: 180px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #000;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+  }
+  #cam-video, #cam-overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  /* Mirror the video so it feels like looking in a mirror. */
+  #cam-video { transform: scaleX(-1); }
+  #cam-overlay { pointer-events: none; }
+  #cam-status {
+    position: absolute;
+    top: 6px; left: 8px;
+    font-size: 10px;
+    color: #fff;
+    background: rgba(0,0,0,0.5);
+    padding: 2px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+
+  /* --- on-screen hand cursor --- */
+  #hand-cursor {
+    position: absolute;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 2px solid #4f8fe0;
+    background: rgba(79,143,224,0.18);
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    transition: background-color 0.08s, border-color 0.08s, width 0.08s, height 0.08s;
+    z-index: 5;
+  }
+  #hand-cursor.pinching {
+    border-color: #ff8a5f;
+    background: rgba(255,138,95,0.32);
+    width: 20px;
+    height: 20px;
+  }
+
   /* --- control panel (right) --- */
   #panel {
     background: var(--panel);
@@ -178,8 +233,18 @@
 
     <div id="hint">
       <b>Left-drag</b> orbit · <b>right-drag</b> pan · <b>wheel</b> zoom · <b>click</b> a body to focus.
-      Turn on <b>Hand mode</b> to grab a planet, drag to reposition, and flick to set its velocity — then watch gravity take over.
+      Turn on <b>Camera hands</b> to control with a real hand: move to point, pinch to grab, release to flick.
     </div>
+
+    <!-- Webcam preview shown while hand tracking is on. -->
+    <div id="cam-wrap" hidden>
+      <video id="cam-video" autoplay playsinline muted></video>
+      <canvas id="cam-overlay" width="240" height="180"></canvas>
+      <div id="cam-status">off</div>
+    </div>
+
+    <!-- The on-screen cursor driven by the hand. -->
+    <div id="hand-cursor" hidden></div>
   </div>
 
   <div id="panel">
@@ -213,11 +278,14 @@
     <div class="group">
       <h2>Hand of god</h2>
       <div class="btn-row">
-        <button id="btn-hand">✋ Hand mode</button>
+        <button id="btn-hand">✋ Mouse hand mode</button>
+        <button id="btn-cam">📷 Camera hands</button>
       </div>
       <span style="font-size:11px;color:var(--muted)">
-        When on, drag a body to move it; release with a flick to launch it. The
-        simulation re-derives every orbit from the new state.
+        Mouse mode lets you drag a body with the cursor. Camera mode uses your
+        webcam: point with your index finger, <b>pinch</b> thumb+index to grab
+        a planet, release with a flick to launch it. Newtonian gravity takes
+        over from whatever state you leave it in.
       </span>
     </div>
 

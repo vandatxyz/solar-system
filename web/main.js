@@ -19,6 +19,7 @@ import { BODIES, GM, BODY_NAMES, INDEX, J2000_STATE, J2000_JD } from './data.js'
 import { NBody, removeBarycentreDrift } from './physics.js';
 import { EclipseFinder, currentAlignment, jdToCalendar } from './eclipse.js';
 import { Renderer } from './renderer.js';
+import { HandTracker } from './handtrack.js';
 
 // --- build the seed state arrays (flat Float64Array, canonical order) -------
 
@@ -261,29 +262,7 @@ window.addEventListener('mousemove', (ev) => {
 });
 
 window.addEventListener('mouseup', () => {
-  if (grab.active) {
-    // Estimate flick velocity (AU/day) from the last few samples and apply it.
-    const s = grab.samples;
-    if (s.length >= 2) {
-      const a = s[0], b = s[s.length - 1];
-      const dtSec = (b.t - a.t) / 1000;
-      if (dtSec > 1e-3) {
-        // Pixels-per-second flick -> AU/day. 1 day of sim per "flick second"
-        // would be glacial, so scale so a brisk flick gives a visible kick.
-        const FLICK_TO_AUPERDAY = 0.15;
-        const i = grab.index;
-        sim.vel[3*i]   = (b.p[0] - a.p[0]) / dtSec * FLICK_TO_AUPERDAY;
-        sim.vel[3*i+1] = (b.p[1] - a.p[1]) / dtSec * FLICK_TO_AUPERDAY;
-        sim.vel[3*i+2] = (b.p[2] - a.p[2]) / dtSec * FLICK_TO_AUPERDAY;
-        sim._computeAcc();
-      }
-    }
-    grab.active = false;
-    grab.index = -1;
-    // Re-baseline the conserved-quantity reference: we just changed the system.
-    e0 = sim.energy();
-    l0 = sim.angularMomentum();
-  }
+  if (grab.active) finishGrab();
   drag = null;
 });
 
@@ -334,6 +313,120 @@ handBtn.addEventListener('click', () => {
   handBtn.classList.toggle('active', handMode);
   canvas.style.cursor = handMode ? 'grab' : 'default';
 });
+
+// --- camera (real-hand) control --------------------------------------------
+//
+// The HandTracker reports {x,y,pinch,...} per video frame. We translate that
+// into the same grab/move/release machinery as the mouse path above, so the
+// simulation only ever sees one kind of interaction.
+
+const camBtn = document.getElementById('btn-cam');
+const camWrap = document.getElementById('cam-wrap');
+const camStatus = document.getElementById('cam-status');
+const handCursor = document.getElementById('hand-cursor');
+let handTracker = null;
+let handState = { active: false, pinch: false, x: 0, y: 0 };
+
+function onHandFrame(s) {
+  if (!s.present) {
+    handCursor.hidden = true;
+    handState.active = false;
+    // Release any active pinch-grab so it doesn't get stuck.
+    if (grab.active) finishGrab();
+    return;
+  }
+
+  handCursor.hidden = false;
+  handCursor.style.left = `${s.x}px`;
+  handCursor.style.top = `${s.y}px`;
+  handCursor.classList.toggle('pinching', s.pinch);
+  handState = { active: true, pinch: s.pinch, x: s.x, y: s.y };
+
+  // Translate cursor into canvas-local coordinates.
+  const rect = canvas.getBoundingClientRect();
+  const sx = s.x - rect.left;
+  const sy = s.y - rect.top;
+  const insideCanvas = sx >= 0 && sy >= 0 && sx <= rect.width && sy <= rect.height;
+
+  // Pinch starts a grab on the nearest body (if any in canvas).
+  if (s.pinch && !grab.active && insideCanvas) {
+    const hit = renderer.pick(sx, sy);
+    if (hit >= 0) {
+      grab.active = true;
+      grab.index = hit;
+      grab.samples = [];
+      grab.lastWorld = unprojectAtBody(sx, sy, hit);
+    }
+    return;
+  }
+
+  // Drag while pinched: same logic as mousemove during a mouse grab.
+  if (s.pinch && grab.active) {
+    const i = grab.index;
+    const world = unprojectAtBody(sx, sy, i);
+    sim.pos[3*i]   = world[0];
+    sim.pos[3*i+1] = world[1];
+    sim.pos[3*i+2] = world[2];
+    sim._computeAcc();
+    const now = performance.now();
+    grab.samples.push({ t: now, p: world.slice() });
+    while (grab.samples.length > 5) grab.samples.shift();
+    grab.lastWorld = world;
+    return;
+  }
+
+  // Released the pinch: complete the grab and apply the flick velocity.
+  if (!s.pinch && grab.active) finishGrab();
+}
+
+// Wraps the velocity-from-flick logic shared by mouse-up and pinch-release.
+function finishGrab() {
+  if (!grab.active) return;
+  const s = grab.samples;
+  if (s.length >= 2) {
+    const a = s[0], b = s[s.length - 1];
+    const dtSec = (b.t - a.t) / 1000;
+    if (dtSec > 1e-3) {
+      const FLICK_TO_AUPERDAY = 0.15;
+      const i = grab.index;
+      sim.vel[3*i]   = (b.p[0] - a.p[0]) / dtSec * FLICK_TO_AUPERDAY;
+      sim.vel[3*i+1] = (b.p[1] - a.p[1]) / dtSec * FLICK_TO_AUPERDAY;
+      sim.vel[3*i+2] = (b.p[2] - a.p[2]) / dtSec * FLICK_TO_AUPERDAY;
+      sim._computeAcc();
+    }
+  }
+  grab.active = false;
+  grab.index = -1;
+  e0 = sim.energy();
+  l0 = sim.angularMomentum();
+}
+
+async function toggleCamHands() {
+  if (handTracker && handTracker.running) {
+    handTracker.stop();
+    camWrap.hidden = true;
+    handCursor.hidden = true;
+    camBtn.classList.remove('active');
+    return;
+  }
+  camWrap.hidden = false;
+  camBtn.classList.add('active');
+  if (!handTracker) {
+    handTracker = new HandTracker({
+      video: document.getElementById('cam-video'),
+      overlay: document.getElementById('cam-overlay'),
+      onUpdate: onHandFrame,
+      onStatus: (msg) => { camStatus.textContent = msg; },
+    });
+  }
+  try {
+    await handTracker.start();
+  } catch (err) {
+    camStatus.textContent = 'error: ' + (err.message || err);
+    camBtn.classList.remove('active');
+  }
+}
+camBtn.addEventListener('click', () => { toggleCamHands(); });
 
 // Populate the focus selector from the body list.
 BODY_NAMES.forEach((name, i) => {

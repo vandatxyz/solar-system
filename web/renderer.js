@@ -34,11 +34,18 @@ export class Renderer {
 
     // Cosmetic per-body draw radius (px), loosely by class, not to scale.
     this.drawRadius = bodies.map((b) => {
-      if (b.name === "Sun") return 10;
-      if (["Jupiter", "Saturn", "Uranus", "Neptune"].includes(b.name)) return 5;
-      if (b.name === "Moon") return 2;
-      return 3.2;
+      if (b.name === "Sun") return 14;
+      if (b.name === "Jupiter") return 9;
+      if (b.name === "Saturn") return 8;
+      if (["Uranus", "Neptune"].includes(b.name)) return 6.5;
+      if (["Venus", "Earth", "Mars"].includes(b.name)) return 4.5;
+      if (b.name === "Mercury") return 3.6;
+      if (b.name === "Moon") return 2.2;
+      return 3.5;
     });
+
+    // Index of the Sun (light source) for shading the other bodies.
+    this.sunIndex = bodies.findIndex((b) => b.name === "Sun");
 
     this.showTrails = true;
     this.showLabels = true;
@@ -118,18 +125,23 @@ export class Renderer {
     // Project everything, carrying depth for painter's-order sorting.
     const items = [];
     for (let i = 0; i < this.n; i++) {
-      const [cx, cy] = this._toCamera(pos[3 * i], pos[3 * i + 1], pos[3 * i + 2]);
-      const [sx, sy] = this._toScreen(cx, cy);
       const cam = this._toCamera(pos[3 * i], pos[3 * i + 1], pos[3 * i + 2]);
+      const [sx, sy] = this._toScreen(cam[0], cam[1]);
       items.push({ i, sx, sy, depth: cam[2] });
       this.screen[i] = { x: sx, y: sy, r: this.drawRadius[i] };
     }
 
     if (this.showTrails) this._drawTrails();
 
-    // Far bodies first.
+    // The Sun's projected position is the light source for shading the
+    // illuminated hemisphere of every other body.
+    const sun = this.sunIndex >= 0
+      ? items.find((it) => it.i === this.sunIndex)
+      : null;
+
+    // Far bodies first (painter's algorithm).
     items.sort((a, b) => a.depth - b.depth);
-    for (const it of items) this._drawBody(it.i, it.sx, it.sy);
+    for (const it of items) this._drawBody(it.i, it.sx, it.sy, sun);
   }
 
   _drawTrails() {
@@ -149,40 +161,125 @@ export class Renderer {
     }
   }
 
-  _drawBody(i, sx, sy) {
+  // Lighten/darken a #rrggbb hex colour by `f` in [-1, 1].
+  _shade(hex, f) {
+    const n = parseInt(hex.slice(1), 16);
+    let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    if (f >= 0) {
+      r += (255 - r) * f; g += (255 - g) * f; b += (255 - b) * f;
+    } else {
+      r *= 1 + f; g *= 1 + f; b *= 1 + f;
+    }
+    return `rgb(${r | 0},${g | 0},${b | 0})`;
+  }
+
+  _drawBody(i, sx, sy, sun) {
     const { ctx } = this;
     const b = this.bodies[i];
     const r = this.drawRadius[i];
 
     if (b.name === "Sun") {
-      const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 2.4);
-      g.addColorStop(0, "#fff4c2");
-      g.addColorStop(0.5, b.color);
-      g.addColorStop(1, "#ffcc3300");
-      ctx.fillStyle = g;
+      // Outer corona glow.
+      const glow = ctx.createRadialGradient(sx, sy, r * 0.4, sx, sy, r * 3.2);
+      glow.addColorStop(0, "rgba(255,228,140,0.55)");
+      glow.addColorStop(0.4, "rgba(255,190,70,0.22)");
+      glow.addColorStop(1, "rgba(255,180,40,0)");
+      ctx.fillStyle = glow;
       ctx.beginPath();
-      ctx.arc(sx, sy, r * 2.4, 0, 2 * Math.PI);
+      ctx.arc(sx, sy, r * 3.2, 0, 2 * Math.PI);
       ctx.fill();
+      // Bright photosphere.
+      const core = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
+      core.addColorStop(0, "#fffdf0");
+      core.addColorStop(0.6, "#ffe9a0");
+      core.addColorStop(1, "#ffb52e");
+      ctx.fillStyle = core;
+      ctx.beginPath();
+      ctx.arc(sx, sy, r, 0, 2 * Math.PI);
+      ctx.fill();
+      this._label(i, b, sx, sy, r);
+      return;
     }
 
+    // Direction toward the Sun in screen space -> offset the highlight so the
+    // lit limb faces the Sun and the far limb falls into shadow.
+    let lx = -0.4, ly = -0.4;
+    if (sun) {
+      const dx = sun.sx - sx, dy = sun.sy - sy;
+      const d = Math.hypot(dx, dy) || 1;
+      lx = dx / d; ly = dy / d;
+    }
+
+    // Saturn's rings, back half drawn before the globe.
+    if (b.name === "Saturn") this._drawRings(sx, sy, r, lx, ly, true);
+
+    // Shaded sphere: highlight offset toward the light, terminator into shadow.
+    const hx = sx + lx * r * 0.55, hy = sy + ly * r * 0.55;
+    const g = ctx.createRadialGradient(hx, hy, r * 0.1, sx, sy, r * 1.05);
+    g.addColorStop(0, this._shade(b.color, 0.55));
+    g.addColorStop(0.5, b.color);
+    g.addColorStop(1, this._shade(b.color, -0.78));
+    ctx.fillStyle = g;
     ctx.beginPath();
     ctx.arc(sx, sy, r, 0, 2 * Math.PI);
-    ctx.fillStyle = b.color;
     ctx.fill();
+
+    // Subtle rim light on the lit edge.
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(sx, sy, r, 0, 2 * Math.PI);
+    ctx.clip();
+    const rim = ctx.createRadialGradient(hx, hy, r * 0.7, hx, hy, r * 1.4);
+    rim.addColorStop(0, "rgba(255,255,255,0)");
+    rim.addColorStop(1, "rgba(255,255,255,0.18)");
+    ctx.fillStyle = rim;
+    ctx.fillRect(sx - r, sy - r, r * 2, r * 2);
+    ctx.restore();
+
+    if (b.name === "Saturn") this._drawRings(sx, sy, r, lx, ly, false);
 
     if (this.focusIndex === i) {
       ctx.beginPath();
-      ctx.arc(sx, sy, r + 5, 0, 2 * Math.PI);
+      ctx.arc(sx, sy, r + 6, 0, 2 * Math.PI);
       ctx.strokeStyle = "#ffffffaa";
       ctx.lineWidth = 1;
       ctx.stroke();
     }
 
-    if (this.showLabels) {
-      ctx.fillStyle = "#cfd6e4";
-      ctx.font = "11px system-ui, sans-serif";
-      ctx.fillText(b.name, sx + r + 3, sy - r - 2);
-    }
+    this._label(i, b, sx, sy, r);
+  }
+
+  _label(i, b, sx, sy, r) {
+    if (!this.showLabels) return;
+    const { ctx } = this;
+    ctx.fillStyle = "#cfd6e4";
+    ctx.font = "11px system-ui, sans-serif";
+    ctx.fillText(b.name, sx + r + 4, sy - r - 2);
+  }
+
+  // Saturn's ring system as a tilted ellipse, split into a back and front half
+  // so the globe sits correctly between them.
+  _drawRings(sx, sy, r, lx, ly, backHalf) {
+    const { ctx } = this;
+    const rx = r * 2.2;          // ring outer radius (x)
+    const ry = r * 0.7;          // squashed by viewing tilt
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(-0.45);
+    ctx.beginPath();
+    if (backHalf) ctx.ellipse(0, 0, rx, ry, 0, Math.PI, 2 * Math.PI);
+    else          ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI);
+    ctx.lineWidth = r * 0.55;
+    ctx.strokeStyle = backHalf ? "rgba(210,190,140,0.45)" : "rgba(230,210,160,0.8)";
+    ctx.stroke();
+    // Thin inner ring gap.
+    ctx.beginPath();
+    if (backHalf) ctx.ellipse(0, 0, rx * 0.78, ry * 0.78, 0, Math.PI, 2 * Math.PI);
+    else          ctx.ellipse(0, 0, rx * 0.78, ry * 0.78, 0, 0, Math.PI);
+    ctx.lineWidth = r * 0.18;
+    ctx.strokeStyle = backHalf ? "rgba(180,160,120,0.35)" : "rgba(200,180,135,0.6)";
+    ctx.stroke();
+    ctx.restore();
   }
 
   _drawStarfield() {
