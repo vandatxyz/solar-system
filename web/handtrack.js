@@ -160,16 +160,16 @@ export class HandTracker {
     // Depth proxy: hand scale grows as the hand nears the camera.
     const z = handScale;
 
-    // Map normalized coords to actual canvas/screen pixels.
-    const px = nx * window.innerWidth;
-    const py = ny * window.innerHeight;
-
+    // Smooth the *normalized* coords (0..1). The consumer maps them onto
+    // whatever target rect it wants (here: the canvas), so the full range of
+    // hand motion always covers the full drawing area -- mapping to the whole
+    // window would waste the part of the range that falls over the side panel.
     if (!this.sm.init) {
-      this.sm.x = px; this.sm.y = py; this.sm.z = z; this.sm.init = true;
+      this.sm.x = nx; this.sm.y = ny; this.sm.z = z; this.sm.init = true;
     } else {
       const a = this.SMOOTH;
-      this.sm.x += (px - this.sm.x) * a;
-      this.sm.y += (py - this.sm.y) * a;
+      this.sm.x += (nx - this.sm.x) * a;
+      this.sm.y += (ny - this.sm.y) * a;
       this.sm.z += (z - this.sm.z) * a;
     }
 
@@ -177,8 +177,8 @@ export class HandTracker {
 
     this.onUpdate({
       present: true,
-      x: this.sm.x,
-      y: this.sm.y,
+      nx: this.sm.x,            // normalized [0,1], mirrored
+      ny: this.sm.y,
       z: this.sm.z,
       pinch: this.pinched,
       pinchStrength,

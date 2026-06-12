@@ -63,7 +63,12 @@ function resize() {
   const w = canvas.clientWidth, h = canvas.clientHeight;
   canvas.width = Math.round(w * dpr);
   canvas.height = Math.round(h * dpr);
+  // Pre-scale the context so 1 unit = 1 CSS pixel, then hand the renderer the
+  // CSS-pixel view size. All projection and picking work in CSS pixels, which
+  // is also the space mouse events report — so they line up at any dpr.
   renderer.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  renderer.viewW = w;
+  renderer.viewH = h;
 }
 window.addEventListener('resize', resize);
 
@@ -336,16 +341,21 @@ function onHandFrame(s) {
     return;
   }
 
-  handCursor.hidden = false;
-  handCursor.style.left = `${s.x}px`;
-  handCursor.style.top = `${s.y}px`;
-  handCursor.classList.toggle('pinching', s.pinch);
-  handState = { active: true, pinch: s.pinch, x: s.x, y: s.y };
-
-  // Translate cursor into canvas-local coordinates.
+  // Map the normalized hand position onto the canvas rect, so the full range
+  // of hand motion spans exactly the drawing area (not the whole window, whose
+  // right third is the control panel).
   const rect = canvas.getBoundingClientRect();
-  const sx = s.x - rect.left;
-  const sy = s.y - rect.top;
+  const sx = s.nx * rect.width;          // canvas-local pixels
+  const sy = s.ny * rect.height;
+  const pageX = rect.left + sx;          // page pixels, for the visible cursor
+  const pageY = rect.top + sy;
+
+  handCursor.hidden = false;
+  handCursor.style.left = `${pageX}px`;
+  handCursor.style.top = `${pageY}px`;
+  handCursor.classList.toggle('pinching', s.pinch);
+  handState = { active: true, pinch: s.pinch, x: pageX, y: pageY };
+
   const insideCanvas = sx >= 0 && sy >= 0 && sx <= rect.width && sy <= rect.height;
 
   // Pinch starts a grab on the nearest body (if any in canvas).

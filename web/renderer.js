@@ -18,6 +18,14 @@ export class Renderer {
     this.bodies = bodies;
     this.n = bodies.length;
 
+    // Logical (CSS-pixel) view size. The canvas backing store is sized in
+    // physical pixels (width = cssW * dpr) and the context is pre-scaled by
+    // dpr, so ALL drawing/projection math must use these CSS dimensions, not
+    // canvas.width/height -- otherwise everything is offset by the dpr factor
+    // and mouse picking (which works in CSS pixels) misses every body.
+    this.viewW = canvas.clientWidth || 800;
+    this.viewH = canvas.clientHeight || 600;
+
     // Camera state.
     this.scale = 90;        // pixels per AU (set to frame the inner system)
     this.yaw = 0.0;         // rotation about ecliptic +z
@@ -69,10 +77,12 @@ export class Renderer {
   }
 
   // Camera space -> screen pixels (orthographic; depth only sorts draw order).
+  // Uses CSS-pixel dimensions so it matches the dpr-scaled drawing context and
+  // the mouse coordinates used for picking.
   _toScreen(cx, cy) {
     return [
-      this.canvas.width / 2 + cx * this.scale,
-      this.canvas.height / 2 - cy * this.scale,
+      this.viewW / 2 + cx * this.scale,
+      this.viewH / 2 - cy * this.scale,
     ];
   }
 
@@ -119,7 +129,7 @@ export class Renderer {
     }
 
     ctx.fillStyle = "#05070d";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, this.viewW, this.viewH);
     this._drawStarfield();
 
     // Project everything, carrying depth for painter's-order sorting.
@@ -292,10 +302,10 @@ export class Renderer {
         this._stars.push([rnd(), rnd(), 0.3 + 0.7 * rnd()]);
       }
     }
-    const { ctx, canvas } = this;
+    const { ctx } = this;
     for (const [fx, fy, b] of this._stars) {
       ctx.fillStyle = `rgba(255,255,255,${0.15 * b})`;
-      ctx.fillRect(fx * canvas.width, fy * canvas.height, 1, 1);
+      ctx.fillRect(fx * this.viewW, fy * this.viewH, 1, 1);
     }
   }
 }
