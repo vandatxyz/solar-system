@@ -298,6 +298,1422 @@
   </div>
 </div>
 
-<script type="module" src="./main.js"></script>
+<!-- bundled below -->
+<script>
+"use strict";
+// ====== data.js ======
+// data.js -- physical constants, body metadata, and the J2000.0 seed state.
+//
+// This is the JavaScript twin of the Python `constants.py` + `j2000_state.json`.
+// Same unit system as the Python simulation:
+//
+//     length : astronomical unit (AU)
+//     time   : day (d) = 86400 s
+//     mass   : carried as the gravitational parameter GM, in AU^3 / day^2
+//
+// Using GM directly (not G and M separately) is standard celestial mechanics:
+// GM is known far more precisely than either factor, and the equations of
+// motion only ever need the product.
+
+// --- Unit conversion ------------------------------------------------------
+
+const KM_PER_AU = 149_597_870.7;     // IAU 2012 definition, km
+const SEC_PER_DAY = 86_400.0;
+
+// (km^3/s^2) -> (AU^3/day^2)
+const GM_KM3S2_TO_AU3D2 = Math.pow(1.0 / KM_PER_AU, 3) * SEC_PER_DAY * SEC_PER_DAY;
+
+// J2000.0 = 2000-01-01 12:00:00 TDB, the epoch the seed state belongs to.
+const J2000_JD = 2_451_545.0;
+
+// Gravitational parameters GM in km^3/s^2 (JPL DE-series / IAU values),
+// body-center values consistent with treating the Moon as its own body.
+const GM_KM3S2 = {
+  Sun:     1.32712440018e11,
+  Mercury: 2.2031868551e4,
+  Venus:   3.24858592000e5,
+  Earth:   3.98600435507e5,
+  Moon:    4.90028001184e3,
+  Mars:    4.282837362e4,
+  Jupiter: 1.26686531900e8,
+  Saturn:  3.79311879180e7,
+  Uranus:  5.793951256e6,
+  Neptune: 6.835099502e6,
+};
+
+// Mean radii in km (IAU 2015).
+const RADIUS_KM = {
+  Sun:     696_000.0,
+  Mercury: 2_439.7,
+  Venus:   6_051.8,
+  Earth:   6_371.0084,
+  Moon:    1_737.4,
+  Mars:    3_389.5,
+  Jupiter: 69_911.0,
+  Saturn:  58_232.0,
+  Uranus:  25_362.0,
+  Neptune: 24_622.0,
+};
+
+// Display colours (purely cosmetic).
+const COLOR = {
+  Sun:     "#ffcc33",
+  Mercury: "#b9b6ad",
+  Venus:   "#e8c98a",
+  Earth:   "#4f8fe0",
+  Moon:    "#cfcfcf",
+  Mars:    "#d9603b",
+  Jupiter: "#d8a86b",
+  Saturn:  "#e3d29a",
+  Uranus:  "#9fd8e0",
+  Neptune: "#6f8fe0",
+};
+
+// Canonical ordering -- state arrays follow this order everywhere.
+const BODY_NAMES = [
+  "Sun", "Mercury", "Venus", "Earth", "Moon",
+  "Mars", "Jupiter", "Saturn", "Uranus", "Neptune",
+];
+
+const INDEX = Object.fromEntries(BODY_NAMES.map((n, i) => [n, i]));
+
+// Per-body static metadata, in simulation units.
+const BODIES = BODY_NAMES.map((name) => ({
+  name,
+  gm: GM_KM3S2[name] * GM_KM3S2_TO_AU3D2,   // AU^3 / day^2
+  radiusKm: RADIUS_KM[name],
+  radiusAu: RADIUS_KM[name] / KM_PER_AU,
+  color: COLOR[name],
+}));
+
+// GM vector in canonical order (handy for the integrator).
+const GM = BODIES.map((b) => b.gm);
+
+// --- J2000.0 seed state ---------------------------------------------------
+//
+// Position (AU) and velocity (AU/day) in the J2000 ecliptic frame, centred on
+// the Solar System barycentre. Identical to the cached `j2000_state.json`
+// fetched from JPL Horizons by the Python version.
+
+const J2000_STATE = {
+  Sun:     { pos: [-0.007137179161607904, -0.002795997495567612,  0.0002062985061910257],
+             vel: [ 5.378460339618783e-06, -7.406916207973516e-06, -9.43429343213747e-08] },
+  Mercury: { pos: [-0.1372307845370601,  -0.450083615630924,    -0.02439200845186075],
+             vel: [ 0.02137177412835578,  -0.006455396660044872, -0.002487957757771483] },
+  Venus:   { pos: [-0.725439475506997,   -0.03545030569537367,   0.04122048053303724],
+             vel: [ 0.0008034959761149407,-0.02030262561844178,  -0.0003235458586621571] },
+  Earth:   { pos: [-0.1842722784343177,   0.964445689270963,     0.0002022132246085051],
+             vel: [-0.01720224660838933,  -0.003166189060532839,  1.064592514002072e-08] },
+  Moon:    { pos: [-0.1862215600840044,   0.9626075632308897,    0.000444671198490556],
+             vel: [-0.01683057613107253,  -0.003588367637063646, -6.634893538849906e-06] },
+  Mars:    { pos: [ 1.383578742584744,   -0.01621231564658005,  -0.03426136426962697],
+             vel: [ 0.0006768779624069969, 0.0151798411782796,    0.0003015574290837992] },
+  Jupiter: { pos: [ 3.994040256427818,    2.935779784974931,    -0.101578984945624],
+             vel: [-0.004562948121087195,  0.006435847855854325,  7.548691257292337e-05] },
+  Saturn:  { pos: [ 6.399273249217048,    6.567192454614989,    -0.3688696745701767],
+             vel: [-0.004286506154280534,  0.003883395100744251,  0.0001025581110922691] },
+  Uranus:  { pos: [14.42471809676244,   -13.73711939965492,     -0.2379354688209131],
+             vel: [ 0.002683627208509772,  0.002665254700749824, -2.488379610328529e-05] },
+  Neptune: { pos: [16.8049100760519,    -24.99455905985419,      0.1274288139389692],
+             vel: [ 0.002584290670584903,  0.001769120292270417, -9.611096855010698e-05] },
+};
+
+// ====== physics.js ======
+// physics.js -- Newtonian gravity and the symplectic integrator.
+//
+// Direct JavaScript port of the Python `physics.py` + `integrator.py`. The law
+// of motion is Newton's law of universal gravitation, nothing else:
+//
+//     a_i = sum_{j != i}  GM_j * (r_j - r_i) / |r_j - r_i|^3
+//
+// and the trajectory is advanced with velocity-Verlet, a symplectic,
+// time-reversible scheme that conserves a shadow energy for all time -- the
+// property that keeps orbits (and thus eclipse timing) stable over long runs.
+//
+// State layout
+// ------------
+// Positions and velocities are stored as flat Float64Array of length 3N
+// (x0,y0,z0, x1,y1,z1, ...). Flat arrays avoid per-step allocation and make
+// the force loop cache-friendly, which matters because we run thousands of
+// steps per animation frame.
+
+class NBody {
+  /**
+   * @param {Float64Array} pos  length 3N, AU
+   * @param {Float64Array} vel  length 3N, AU/day
+   * @param {number[]|Float64Array} gm  length N, AU^3/day^2
+   * @param {number} dt  timestep in days
+   */
+  constructor(pos, vel, gm, dt) {
+    this.n = gm.length;
+    this.pos = Float64Array.from(pos);
+    this.vel = Float64Array.from(vel);
+    this.gm = Float64Array.from(gm);
+    this.dt = dt;
+    this.time = 0.0;                       // days since the seed epoch
+    this.acc = new Float64Array(3 * this.n);
+    this._computeAcc();                    // prime the cached acceleration
+  }
+
+  // Newtonian acceleration field -> this.acc. O(N^2); N is small (10).
+  _computeAcc() {
+    const { n, pos, gm, acc } = this;
+    acc.fill(0.0);
+    for (let i = 0; i < n; i++) {
+      const ix = 3 * i, iy = ix + 1, iz = ix + 2;
+      const xi = pos[ix], yi = pos[iy], zi = pos[iz];
+      let axi = 0.0, ayi = 0.0, azi = 0.0;
+      for (let j = 0; j < n; j++) {
+        if (j === i) continue;
+        const jx = 3 * j;
+        const dx = pos[jx]     - xi;
+        const dy = pos[jx + 1] - yi;
+        const dz = pos[jx + 2] - zi;
+        const r2 = dx * dx + dy * dy + dz * dz;
+        // GM_j / r^3 along the separation vector.
+        const invR3 = gm[j] / (r2 * Math.sqrt(r2));
+        axi += dx * invR3;
+        ayi += dy * invR3;
+        azi += dz * invR3;
+      }
+      acc[ix] = axi; acc[iy] = ayi; acc[iz] = azi;
+    }
+  }
+
+  // Advance one timestep in place: half kick -> full drift -> half kick.
+  step() {
+    const { pos, vel, acc, dt } = this;
+    const h = dt, half = 0.5 * dt;
+    const m = pos.length;
+    // Half kick + full drift using the cached acceleration.
+    for (let k = 0; k < m; k++) {
+      vel[k] += half * acc[k];
+      pos[k] += h * vel[k];
+    }
+    // Recompute acceleration at the new positions, then the second half kick.
+    this._computeAcc();
+    for (let k = 0; k < m; k++) {
+      vel[k] += half * acc[k];
+    }
+    this.time += h;
+  }
+
+  // Advance n steps; invoke cb(this) after each if provided.
+  run(nSteps, cb) {
+    for (let s = 0; s < nSteps; s++) {
+      this.step();
+      if (cb) cb(this);
+    }
+  }
+
+  // --- conserved quantities, for the live diagnostics readout -------------
+
+  // Total mechanical energy divided by G (units where "mass" is GM).
+  energy() {
+    const { n, pos, vel, gm } = this;
+    let kinetic = 0.0;
+    for (let i = 0; i < n; i++) {
+      const k = 3 * i;
+      const v2 = vel[k] * vel[k] + vel[k + 1] * vel[k + 1] + vel[k + 2] * vel[k + 2];
+      kinetic += 0.5 * gm[i] * v2;
+    }
+    let potential = 0.0;
+    for (let i = 0; i < n; i++) {
+      const ix = 3 * i;
+      for (let j = i + 1; j < n; j++) {
+        const jx = 3 * j;
+        const dx = pos[ix]     - pos[jx];
+        const dy = pos[ix + 1] - pos[jx + 1];
+        const dz = pos[ix + 2] - pos[jx + 2];
+        const r = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        potential -= gm[i] * gm[j] / r;
+      }
+    }
+    return kinetic + potential;
+  }
+
+  // Total angular momentum divided by G, as [Lx, Ly, Lz].
+  angularMomentum() {
+    const { n, pos, vel, gm } = this;
+    let lx = 0.0, ly = 0.0, lz = 0.0;
+    for (let i = 0; i < n; i++) {
+      const k = 3 * i;
+      const x = pos[k],   y = pos[k + 1],   z = pos[k + 2];
+      const vx = vel[k],  vy = vel[k + 1],  vz = vel[k + 2];
+      lx += gm[i] * (y * vz - z * vy);
+      ly += gm[i] * (z * vx - x * vz);
+      lz += gm[i] * (x * vy - y * vx);
+    }
+    return [lx, ly, lz];
+  }
+}
+
+// Shift to the GM-weighted centre-of-mass frame and null the net momentum, so
+// the whole system doesn't drift across the view. Mutates pos/vel in place.
+function removeBarycentreDrift(pos, vel, gm) {
+  const n = gm.length;
+  let totalGm = 0.0;
+  const com = [0, 0, 0], vcom = [0, 0, 0];
+  for (let i = 0; i < n; i++) {
+    totalGm += gm[i];
+    const k = 3 * i;
+    for (let d = 0; d < 3; d++) {
+      com[d]  += gm[i] * pos[k + d];
+      vcom[d] += gm[i] * vel[k + d];
+    }
+  }
+  for (let d = 0; d < 3; d++) { com[d] /= totalGm; vcom[d] /= totalGm; }
+  for (let i = 0; i < n; i++) {
+    const k = 3 * i;
+    for (let d = 0; d < 3; d++) {
+      pos[k + d] -= com[d];
+      vel[k + d] -= vcom[d];
+    }
+  }
+}
+
+// ====== eclipse.js ======
+// eclipse.js -- solar-eclipse detection read off the live trajectory.
+//
+// Port of the Python `eclipse.py`. No eclipse-specific physics is hard-coded;
+// everything follows from three position vectors (Sun, Earth, Moon) that the
+// N-body integration already produces. We track the Sun-Moon angular
+// separation seen from Earth, find its local minima (new moons), and check
+// whether the disks overlap once lunar parallax is accounted for.
+
+// [import: eclipse.js]
+
+const R_SUN   = RADIUS_KM.Sun   / KM_PER_AU;
+const R_MOON  = RADIUS_KM.Moon  / KM_PER_AU;
+const R_EARTH = RADIUS_KM.Earth / KM_PER_AU;
+
+const I_SUN   = INDEX.Sun;
+const I_EARTH = INDEX.Earth;
+const I_MOON  = INDEX.Moon;
+
+function vecFrom(pos, a, b, out) {
+  // out = r_a - r_b
+  const ka = 3 * a, kb = 3 * b;
+  out[0] = pos[ka]     - pos[kb];
+  out[1] = pos[ka + 1] - pos[kb + 1];
+  out[2] = pos[ka + 2] - pos[kb + 2];
+  return out;
+}
+
+function norm(v) { return Math.hypot(v[0], v[1], v[2]); }
+
+function angularSeparation(s, m) {
+  const dot = s[0] * m[0] + s[1] * m[1] + s[2] * m[2];
+  let cos = dot / (norm(s) * norm(m));
+  cos = Math.min(1, Math.max(-1, cos));
+  return Math.acos(cos);
+}
+
+// (kind, magnitude) for a conjunction at angular `separation` (radians).
+function classify(s, m, separation) {
+  const distSun = norm(s);
+  const distMoon = norm(m);
+
+  const alphaSun  = Math.asin(R_SUN  / distSun);
+  const alphaMoon = Math.asin(R_MOON / distMoon);
+  const alphaPar  = Math.asin(R_EARTH / distMoon);   // lunar parallax
+
+  if (separation > alphaSun + alphaMoon + alphaPar) {
+    return { kind: 'none', magnitude: 0 };
+  }
+
+  // Apparent radii from the sub-lunar surface point (closest observer).
+  const alphaSunSurf  = Math.asin(R_SUN  / (distSun  - R_EARTH));
+  const alphaMoonSurf = Math.asin(R_MOON / (distMoon - R_EARTH));
+
+  const centralOverlap = separation < alphaSun + alphaMoon;
+  let kind;
+  if (centralOverlap && alphaMoonSurf >= alphaSunSurf) kind = 'total';
+  else if (centralOverlap)                             kind = 'annular';
+  else                                                 kind = 'partial';
+
+  const sepSurf = Math.max(separation - alphaPar, 0);
+  let magnitude = (alphaSunSurf + alphaMoonSurf - sepSurf) / (2 * alphaSunSurf);
+  magnitude = Math.min(2, Math.max(0, magnitude));
+  return { kind, magnitude };
+}
+
+const RAD2DEG = 180 / Math.PI;
+
+// Fliegel & Van Flandern: Julian Date -> 'YYYY-MM-DD HH:MM' (UTC-ish).
+function jdToCalendar(jd) {
+  const jdAdj = jd + 0.5;
+  const z = Math.floor(jdAdj);
+  const frac = jdAdj - z;
+  let a;
+  if (z < 2299161) a = z;
+  else {
+    const alpha = Math.floor((z - 1867216.25) / 36524.25);
+    a = z + 1 + alpha - Math.floor(alpha / 4);
+  }
+  const b = a + 1524;
+  const c = Math.floor((b - 122.1) / 365.25);
+  const d = Math.floor(365.25 * c);
+  const e = Math.floor((b - d) / 30.6001);
+  const day = b - d - Math.floor(30.6001 * e);
+  const month = e < 14 ? e - 1 : e - 13;
+  const year = month > 2 ? c - 4716 : c - 4715;
+  let hours = frac * 24;
+  let hh = Math.floor(hours);
+  let mm = Math.round((hours - hh) * 60);
+  if (mm === 60) { mm = 0; hh += 1; }
+  const p = (x, w = 2) => String(x).padStart(w, '0');
+  return `${p(year, 4)}-${p(month)}-${p(day)} ${p(hh)}:${p(mm)}`;
+}
+
+// Streaming finder: feed it the integrator after each step; it watches the
+// Sun-Moon separation and emits an event when a refined local minimum turns
+// out to be an eclipse. Same parabolic sub-step refinement as the Python side.
+class EclipseFinder {
+  constructor(jd0 = J2000_JD, onEvent = null) {
+    this.jd0 = jd0;
+    this.onEvent = onEvent;
+    this.events = [];
+    this._hist = [];                       // last 3 {t, sep, s, m}
+    this._s = new Float64Array(3);
+    this._m = new Float64Array(3);
+  }
+
+  feed(integ) {
+    const s = vecFrom(integ.pos, I_SUN, I_EARTH, this._s);
+    const m = vecFrom(integ.pos, I_MOON, I_EARTH, this._m);
+    const sep = angularSeparation(s, m);
+    this._hist.push({ t: integ.time, sep, s: Float64Array.from(s), m: Float64Array.from(m) });
+    if (this._hist.length > 3) this._hist.shift();
+    if (this._hist.length === 3) this._checkMinimum();
+  }
+
+  _checkMinimum() {
+    const [a, b, c] = this._hist;
+    const f0 = a.sep, f1 = b.sep, f2 = c.sep;
+    if (!(f1 < f0 && f1 < f2)) return;     // not a local minimum
+
+    const denom = f0 - 2 * f1 + f2;
+    if (denom <= 0) return;
+    const delta = 0.5 * (f0 - f2) / denom; // vertex offset, in steps
+    let sepMin = f1 - 0.25 * (f0 - f2) * delta;
+    sepMin = Math.max(sepMin, 0);
+
+    const { kind, magnitude } = classify(b.s, b.m, sepMin);
+    if (kind === 'none') return;
+
+    const h = b.t - a.t;
+    const tMin = b.t + delta * h;
+    const jd = this.jd0 + tMin;
+    const ev = {
+      jd,
+      calendar: jdToCalendar(jd),
+      kind,
+      separationDeg: sepMin * RAD2DEG,
+      magnitude,
+    };
+    this.events.push(ev);
+    if (this.onEvent) this.onEvent(ev);
+  }
+}
+
+// One-shot geometry probe for the *current* instant, for the live HUD: is an
+// eclipse happening right now, and how aligned are the disks?
+function currentAlignment(pos) {
+  const s = vecFrom(pos, I_SUN, I_EARTH, new Float64Array(3));
+  const m = vecFrom(pos, I_MOON, I_EARTH, new Float64Array(3));
+  const sep = angularSeparation(s, m);
+  const { kind, magnitude } = classify(s, m, sep);
+  return { separationDeg: sep * RAD2DEG, kind, magnitude };
+}
+
+// ====== renderer.js ======
+// renderer.js -- Canvas 2D view of the simulation with an interactive camera.
+//
+// The simulation lives in 3D ecliptic coordinates (AU). The renderer projects
+// those onto the screen with a simple camera the user can drive:
+//
+//     - yaw / pitch  : orbit the viewpoint around the focus  (left-drag)
+//     - zoom         : AU-per-pixel scale                     (wheel)
+//     - pan          : move the focus point                   (right-drag)
+//     - focus        : lock the camera onto a chosen body     (click / picker)
+//
+// Bodies are drawn at exaggerated sizes (true planetary radii are invisible at
+// solar-system scale), with orbital trails accumulated as the system evolves.
+
+class Renderer {
+  constructor(canvas, bodies) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext("2d");
+    this.bodies = bodies;
+    this.n = bodies.length;
+
+    // Camera state.
+    this.scale = 90;        // pixels per AU (set to frame the inner system)
+    this.yaw = 0.0;         // rotation about ecliptic +z
+    this.pitch = 0.4;       // tilt toward the ecliptic plane
+    this.focus = [0, 0, 0]; // world-space point the camera centres on (AU)
+    this.focusIndex = 0;    // body index the focus tracks (-1 = free)
+
+    // Per-body screen positions (filled each draw), used for picking.
+    this.screen = new Array(this.n).fill(null).map(() => ({ x: 0, y: 0, r: 0 }));
+
+    // Orbital trails: a ring buffer of recent world positions per body.
+    this.trailLen = 600;
+    this.trails = bodies.map(() => []);
+
+    // Cosmetic per-body draw radius (px), loosely by class, not to scale.
+    this.drawRadius = bodies.map((b) => {
+      if (b.name === "Sun") return 14;
+      if (b.name === "Jupiter") return 9;
+      if (b.name === "Saturn") return 8;
+      if (["Uranus", "Neptune"].includes(b.name)) return 6.5;
+      if (["Venus", "Earth", "Mars"].includes(b.name)) return 4.5;
+      if (b.name === "Mercury") return 3.6;
+      if (b.name === "Moon") return 2.2;
+      return 3.5;
+    });
+
+    // Index of the Sun (light source) for shading the other bodies.
+    this.sunIndex = bodies.findIndex((b) => b.name === "Sun");
+
+    this.showTrails = true;
+    this.showLabels = true;
+  }
+
+  // World (AU, 3D) -> camera space, applying focus translation then yaw/pitch.
+  _toCamera(x, y, z) {
+    const dx = x - this.focus[0];
+    const dy = y - this.focus[1];
+    const dz = z - this.focus[2];
+    // Yaw about z.
+    const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
+    const x1 = cy * dx - sy * dy;
+    const y1 = sy * dx + cy * dy;
+    const z1 = dz;
+    // Pitch about the (rotated) x axis.
+    const cp = Math.cos(this.pitch), sp = Math.sin(this.pitch);
+    const y2 = cp * y1 - sp * z1;
+    const z2 = sp * y1 + cp * z1;
+    return [x1, y2, z2];     // z2 is depth (toward viewer), used for ordering
+  }
+
+  // Camera space -> screen pixels (orthographic; depth only sorts draw order).
+  _toScreen(cx, cy) {
+    return [
+      this.canvas.width / 2 + cx * this.scale,
+      this.canvas.height / 2 - cy * this.scale,
+    ];
+  }
+
+  // Record the current positions into the trail ring buffers.
+  pushTrail(pos) {
+    if (!this.showTrails) return;
+    for (let i = 0; i < this.n; i++) {
+      const t = this.trails[i];
+      t.push([pos[3 * i], pos[3 * i + 1], pos[3 * i + 2]]);
+      if (t.length > this.trailLen) t.shift();
+    }
+  }
+
+  clearTrails() {
+    this.trails = this.bodies.map(() => []);
+  }
+
+  // Lock the focus onto a body (or pass -1 to free the camera in place).
+  setFocus(index, pos) {
+    this.focusIndex = index;
+    if (index >= 0) {
+      this.focus = [pos[3 * index], pos[3 * index + 1], pos[3 * index + 2]];
+    }
+  }
+
+  // Pick the body whose drawn disk is nearest a screen point (or -1).
+  pick(sx, sy) {
+    let best = -1, bestD = 14; // px tolerance
+    for (let i = 0; i < this.n; i++) {
+      const s = this.screen[i];
+      const d = Math.hypot(s.x - sx, s.y - sy);
+      if (d < Math.max(bestD, s.r + 4)) { bestD = d; best = i; }
+    }
+    return best;
+  }
+
+  draw(pos) {
+    const { ctx, canvas } = this;
+
+    // Keep the focus glued to the tracked body.
+    if (this.focusIndex >= 0) {
+      const i = this.focusIndex;
+      this.focus = [pos[3 * i], pos[3 * i + 1], pos[3 * i + 2]];
+    }
+
+    ctx.fillStyle = "#05070d";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    this._drawStarfield();
+
+    // Project everything, carrying depth for painter's-order sorting.
+    const items = [];
+    for (let i = 0; i < this.n; i++) {
+      const cam = this._toCamera(pos[3 * i], pos[3 * i + 1], pos[3 * i + 2]);
+      const [sx, sy] = this._toScreen(cam[0], cam[1]);
+      items.push({ i, sx, sy, depth: cam[2] });
+      this.screen[i] = { x: sx, y: sy, r: this.drawRadius[i] };
+    }
+
+    if (this.showTrails) this._drawTrails();
+
+    // The Sun's projected position is the light source for shading the
+    // illuminated hemisphere of every other body.
+    const sun = this.sunIndex >= 0
+      ? items.find((it) => it.i === this.sunIndex)
+      : null;
+
+    // Far bodies first (painter's algorithm).
+    items.sort((a, b) => a.depth - b.depth);
+    for (const it of items) this._drawBody(it.i, it.sx, it.sy, sun);
+  }
+
+  _drawTrails() {
+    const { ctx } = this;
+    for (let i = 0; i < this.n; i++) {
+      const t = this.trails[i];
+      if (t.length < 2) continue;
+      ctx.beginPath();
+      for (let k = 0; k < t.length; k++) {
+        const [cx, cy] = this._toCamera(t[k][0], t[k][1], t[k][2]);
+        const [sx, sy] = this._toScreen(cx, cy);
+        if (k === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+      }
+      ctx.strokeStyle = this.bodies[i].color + "55"; // translucent
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  }
+
+  // Lighten/darken a #rrggbb hex colour by `f` in [-1, 1].
+  _shade(hex, f) {
+    const n = parseInt(hex.slice(1), 16);
+    let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    if (f >= 0) {
+      r += (255 - r) * f; g += (255 - g) * f; b += (255 - b) * f;
+    } else {
+      r *= 1 + f; g *= 1 + f; b *= 1 + f;
+    }
+    return `rgb(${r | 0},${g | 0},${b | 0})`;
+  }
+
+  _drawBody(i, sx, sy, sun) {
+    const { ctx } = this;
+    const b = this.bodies[i];
+    const r = this.drawRadius[i];
+
+    if (b.name === "Sun") {
+      // Outer corona glow.
+      const glow = ctx.createRadialGradient(sx, sy, r * 0.4, sx, sy, r * 3.2);
+      glow.addColorStop(0, "rgba(255,228,140,0.55)");
+      glow.addColorStop(0.4, "rgba(255,190,70,0.22)");
+      glow.addColorStop(1, "rgba(255,180,40,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(sx, sy, r * 3.2, 0, 2 * Math.PI);
+      ctx.fill();
+      // Bright photosphere.
+      const core = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
+      core.addColorStop(0, "#fffdf0");
+      core.addColorStop(0.6, "#ffe9a0");
+      core.addColorStop(1, "#ffb52e");
+      ctx.fillStyle = core;
+      ctx.beginPath();
+      ctx.arc(sx, sy, r, 0, 2 * Math.PI);
+      ctx.fill();
+      this._label(i, b, sx, sy, r);
+      return;
+    }
+
+    // Direction toward the Sun in screen space -> offset the highlight so the
+    // lit limb faces the Sun and the far limb falls into shadow.
+    let lx = -0.4, ly = -0.4;
+    if (sun) {
+      const dx = sun.sx - sx, dy = sun.sy - sy;
+      const d = Math.hypot(dx, dy) || 1;
+      lx = dx / d; ly = dy / d;
+    }
+
+    // Saturn's rings, back half drawn before the globe.
+    if (b.name === "Saturn") this._drawRings(sx, sy, r, lx, ly, true);
+
+    // Shaded sphere: highlight offset toward the light, terminator into shadow.
+    const hx = sx + lx * r * 0.55, hy = sy + ly * r * 0.55;
+    const g = ctx.createRadialGradient(hx, hy, r * 0.1, sx, sy, r * 1.05);
+    g.addColorStop(0, this._shade(b.color, 0.55));
+    g.addColorStop(0.5, b.color);
+    g.addColorStop(1, this._shade(b.color, -0.78));
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(sx, sy, r, 0, 2 * Math.PI);
+    ctx.fill();
+
+    // Subtle rim light on the lit edge.
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(sx, sy, r, 0, 2 * Math.PI);
+    ctx.clip();
+    const rim = ctx.createRadialGradient(hx, hy, r * 0.7, hx, hy, r * 1.4);
+    rim.addColorStop(0, "rgba(255,255,255,0)");
+    rim.addColorStop(1, "rgba(255,255,255,0.18)");
+    ctx.fillStyle = rim;
+    ctx.fillRect(sx - r, sy - r, r * 2, r * 2);
+    ctx.restore();
+
+    if (b.name === "Saturn") this._drawRings(sx, sy, r, lx, ly, false);
+
+    if (this.focusIndex === i) {
+      ctx.beginPath();
+      ctx.arc(sx, sy, r + 6, 0, 2 * Math.PI);
+      ctx.strokeStyle = "#ffffffaa";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    this._label(i, b, sx, sy, r);
+  }
+
+  _label(i, b, sx, sy, r) {
+    if (!this.showLabels) return;
+    const { ctx } = this;
+    ctx.fillStyle = "#cfd6e4";
+    ctx.font = "11px system-ui, sans-serif";
+    ctx.fillText(b.name, sx + r + 4, sy - r - 2);
+  }
+
+  // Saturn's ring system as a tilted ellipse, split into a back and front half
+  // so the globe sits correctly between them.
+  _drawRings(sx, sy, r, lx, ly, backHalf) {
+    const { ctx } = this;
+    const rx = r * 2.2;          // ring outer radius (x)
+    const ry = r * 0.7;          // squashed by viewing tilt
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(-0.45);
+    ctx.beginPath();
+    if (backHalf) ctx.ellipse(0, 0, rx, ry, 0, Math.PI, 2 * Math.PI);
+    else          ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI);
+    ctx.lineWidth = r * 0.55;
+    ctx.strokeStyle = backHalf ? "rgba(210,190,140,0.45)" : "rgba(230,210,160,0.8)";
+    ctx.stroke();
+    // Thin inner ring gap.
+    ctx.beginPath();
+    if (backHalf) ctx.ellipse(0, 0, rx * 0.78, ry * 0.78, 0, Math.PI, 2 * Math.PI);
+    else          ctx.ellipse(0, 0, rx * 0.78, ry * 0.78, 0, 0, Math.PI);
+    ctx.lineWidth = r * 0.18;
+    ctx.strokeStyle = backHalf ? "rgba(180,160,120,0.35)" : "rgba(200,180,135,0.6)";
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  _drawStarfield() {
+    // A cheap, stable starfield seeded once from the canvas size.
+    if (!this._stars) {
+      this._stars = [];
+      let seed = 1234567;
+      const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+      for (let k = 0; k < 220; k++) {
+        this._stars.push([rnd(), rnd(), 0.3 + 0.7 * rnd()]);
+      }
+    }
+    const { ctx, canvas } = this;
+    for (const [fx, fy, b] of this._stars) {
+      ctx.fillStyle = `rgba(255,255,255,${0.15 * b})`;
+      ctx.fillRect(fx * canvas.width, fy * canvas.height, 1, 1);
+    }
+  }
+}
+
+// ====== handtrack.js ======
+// handtrack.js -- webcam hand tracking that turns a real hand into a 3D cursor
+// for the simulator. Uses Google MediaPipe Hands (loaded from CDN, runs fully
+// in-browser on WebGL/WASM -- no backend, no data leaves the machine).
+//
+// What it exposes to the rest of the app, per video frame:
+//
+//   onUpdate({
+//     present,            // is a hand visible this frame
+//     x, y,               // index-fingertip position in *screen* pixels
+//     z,                  // relative depth (smaller = hand closer to camera)
+//     pinch,              // true while thumb + index tips are pinched together
+//     pinchStrength,      // 0..1, how closed the pinch is
+//   })
+//
+// Gesture model
+// -------------
+//   move hand   -> move the cursor (index fingertip drives it)
+//   pinch       -> "grab" (equivalent to mouse-down on a planet)
+//   release     -> let go; the motion just before release becomes a flick
+//   push/pull   -> hand depth maps to camera zoom when nothing is grabbed
+//
+// The cursor is mirrored horizontally so the interaction feels like a mirror:
+// move your hand right, the cursor goes right.
+
+const MP_VERSION = "0.4.1675469240";
+const CDN = `https://cdn.jsdelivr.net/npm/@mediapipe/hands@${MP_VERSION}`;
+
+// Landmark indices we care about (MediaPipe Hands topology).
+const TIP_THUMB = 4;
+const TIP_INDEX = 8;
+const MCP_INDEX = 5;
+const WRIST = 0;
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = src;
+    s.crossOrigin = "anonymous";
+    s.onload = resolve;
+    s.onerror = () => reject(new Error(`failed to load ${src}`));
+    document.head.appendChild(s);
+  });
+}
+
+class HandTracker {
+  /**
+   * @param {object} opts
+   * @param {HTMLVideoElement} opts.video    hidden <video> fed by the webcam
+   * @param {HTMLCanvasElement} opts.overlay small canvas showing the skeleton
+   * @param {(s:object)=>void} opts.onUpdate per-frame state callback
+   * @param {(msg:string)=>void} [opts.onStatus] status / error reporting
+   */
+  constructor({ video, overlay, onUpdate, onStatus }) {
+    this.video = video;
+    this.overlay = overlay;
+    this.octx = overlay.getContext("2d");
+    this.onUpdate = onUpdate;
+    this.onStatus = onStatus || (() => {});
+    this.running = false;
+    this.hands = null;
+    this.stream = null;
+
+    // Smoothing state (exponential moving average) to kill jitter.
+    this.sm = { x: 0, y: 0, z: 0, init: false };
+    this.SMOOTH = 0.45;          // higher = snappier, lower = smoother
+    this.PINCH_ON = 0.05;        // normalized distance to enter pinch
+    this.PINCH_OFF = 0.08;       // hysteresis: looser threshold to release
+    this.pinched = false;
+  }
+
+  async start() {
+    if (this.running) return;
+    this.onStatus("loading model…");
+
+    // MediaPipe ships as classic scripts that attach globals to window.
+    if (!window.Hands) {
+      await loadScript(`${CDN}/hands.js`);
+    }
+
+    this.hands = new window.Hands({
+      locateFile: (file) => `${CDN}/${file}`,
+    });
+    this.hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 0,        // 0 = lite, fast enough for live control
+      minDetectionConfidence: 0.6,
+      minTrackingConfidence: 0.6,
+    });
+    this.hands.onResults((r) => this._onResults(r));
+
+    this.onStatus("requesting camera…");
+    this.stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "user", width: 640, height: 480 },
+      audio: false,
+    });
+    this.video.srcObject = this.stream;
+    await this.video.play();
+
+    this.running = true;
+    this.onStatus("tracking");
+    this._pump();
+  }
+
+  stop() {
+    this.running = false;
+    if (this.stream) {
+      this.stream.getTracks().forEach((t) => t.stop());
+      this.stream = null;
+    }
+    this.octx.clearRect(0, 0, this.overlay.width, this.overlay.height);
+    this.onStatus("off");
+    // Signal "no hand" so any active grab is released cleanly.
+    this.onUpdate({ present: false, x: 0, y: 0, z: 0, pinch: false, pinchStrength: 0 });
+  }
+
+  // Drive MediaPipe from requestAnimationFrame; it processes one frame at a
+  // time and we re-arm only after it returns, so we never queue up backlog.
+  async _pump() {
+    if (!this.running) return;
+    try {
+      await this.hands.send({ image: this.video });
+    } catch (e) {
+      // Transient send errors (e.g. video not ready) -- just try next frame.
+    }
+    if (this.running) requestAnimationFrame(() => this._pump());
+  }
+
+  _onResults(res) {
+    const ow = this.overlay.width, oh = this.overlay.height;
+    this.octx.clearRect(0, 0, ow, oh);
+
+    const hasHand = res.multiHandLandmarks && res.multiHandLandmarks.length > 0;
+    if (!hasHand) {
+      this.onUpdate({ present: false, x: 0, y: 0, z: 0, pinch: false, pinchStrength: 0 });
+      this.sm.init = false;
+      return;
+    }
+
+    const lm = res.multiHandLandmarks[0];
+    const tip = lm[TIP_INDEX];
+    const thumb = lm[TIP_THUMB];
+
+    // Mirror X so it behaves like a mirror. Landmarks are normalized [0,1].
+    const nx = 1 - tip.x;
+    const ny = tip.y;
+
+    // Hand scale = wrist->index-MCP distance, used to normalize the pinch gap
+    // so it's distance-invariant (works whether hand is near or far).
+    const handScale = Math.hypot(
+      lm[WRIST].x - lm[MCP_INDEX].x,
+      lm[WRIST].y - lm[MCP_INDEX].y,
+    ) || 0.1;
+    const pinchGap = Math.hypot(tip.x - thumb.x, tip.y - thumb.y) / handScale;
+    const pinchStrength = Math.max(0, Math.min(1, 1 - pinchGap / 0.6));
+
+    // Pinch with hysteresis so it doesn't chatter at the threshold.
+    if (!this.pinched && pinchGap < this.PINCH_ON) this.pinched = true;
+    else if (this.pinched && pinchGap > this.PINCH_OFF) this.pinched = false;
+
+    // Depth proxy: hand scale grows as the hand nears the camera.
+    const z = handScale;
+
+    // Map normalized coords to actual canvas/screen pixels.
+    const px = nx * window.innerWidth;
+    const py = ny * window.innerHeight;
+
+    if (!this.sm.init) {
+      this.sm.x = px; this.sm.y = py; this.sm.z = z; this.sm.init = true;
+    } else {
+      const a = this.SMOOTH;
+      this.sm.x += (px - this.sm.x) * a;
+      this.sm.y += (py - this.sm.y) * a;
+      this.sm.z += (z - this.sm.z) * a;
+    }
+
+    this._drawSkeleton(lm, ow, oh, this.pinched);
+
+    this.onUpdate({
+      present: true,
+      x: this.sm.x,
+      y: this.sm.y,
+      z: this.sm.z,
+      pinch: this.pinched,
+      pinchStrength,
+    });
+  }
+
+  // Draw the hand skeleton onto the small mirrored preview overlay.
+  _drawSkeleton(lm, w, h, pinched) {
+    const ctx = this.octx;
+    const EDGES = [
+      [0,1],[1,2],[2,3],[3,4],
+      [0,5],[5,6],[6,7],[7,8],
+      [5,9],[9,10],[10,11],[11,12],
+      [9,13],[13,14],[14,15],[15,16],
+      [13,17],[17,18],[18,19],[19,20],
+      [0,17],
+    ];
+    const X = (p) => (1 - p.x) * w;   // mirror to match the cursor
+    const Y = (p) => p.y * h;
+
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = pinched ? "#ff8a5f" : "#4f8fe0";
+    ctx.beginPath();
+    for (const [a, b] of EDGES) {
+      ctx.moveTo(X(lm[a]), Y(lm[a]));
+      ctx.lineTo(X(lm[b]), Y(lm[b]));
+    }
+    ctx.stroke();
+
+    ctx.fillStyle = pinched ? "#ffd0bf" : "#cfe0ff";
+    for (const p of lm) {
+      ctx.beginPath();
+      ctx.arc(X(p), Y(p), 2.5, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+
+    // Highlight index fingertip (the cursor driver).
+    const tip = lm[TIP_INDEX];
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc(X(tip), Y(tip), 4, 0, 2 * Math.PI);
+    ctx.fill();
+  }
+}
+
+// ====== main.js ======
+// main.js -- ties the physics, renderer, and UI together into an interactive
+// simulator. The simulation runs on its own clock (many integrator steps per
+// animation frame); the UI just reads state out and lets you nudge it.
+//
+// Interaction model
+// -----------------
+//   left-drag        orbit the camera (yaw / pitch)
+//   right-drag       pan the focus point
+//   wheel            zoom
+//   click a body     focus the camera on it
+//   drag a body      grab it and set its velocity by flick (hand-of-god mode)
+//   sliders/buttons  time direction & speed, trails, labels, reset
+//
+// "Interact by hand" is the headline: pause, grab a planet, drag it to a new
+// place or flick it to change its velocity, then resume and watch Newtonian
+// gravity take over from the new state.
+
+// [import: main.js]
+// [import: main.js]
+// [import: main.js]
+// [import: main.js]
+// [import: main.js]
+
+// --- build the seed state arrays (flat Float64Array, canonical order) -------
+
+function seedState() {
+  const n = BODY_NAMES.length;
+  const pos = new Float64Array(3 * n);
+  const vel = new Float64Array(3 * n);
+  BODY_NAMES.forEach((name, i) => {
+    const s = J2000_STATE[name];
+    pos[3 * i] = s.pos[0]; pos[3 * i + 1] = s.pos[1]; pos[3 * i + 2] = s.pos[2];
+    vel[3 * i] = s.vel[0]; vel[3 * i + 1] = s.vel[1]; vel[3 * i + 2] = s.vel[2];
+  });
+  removeBarycentreDrift(pos, vel, GM);
+  return { pos, vel };
+}
+
+// --- simulation + view singletons ------------------------------------------
+
+const canvas = document.getElementById('view');
+const renderer = new Renderer(canvas, BODIES);
+
+let sim, finder;
+const DT = 0.1;                 // days per integrator step (matches Python default)
+
+function resetSim() {
+  const { pos, vel } = seedState();
+  sim = new NBody(pos, vel, GM, DT);
+  finder = new EclipseFinder(J2000_JD, onEclipse);
+  finder.feed(sim);             // seed the finder with the initial geometry
+  renderer.clearTrails();
+  eclipseList.length = 0;
+  refreshEclipseList();
+  e0 = sim.energy();
+  l0 = sim.angularMomentum();
+}
+
+// --- canvas sizing ----------------------------------------------------------
+
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  renderer.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener('resize', resize);
+
+// --- run loop ---------------------------------------------------------------
+
+let running = true;
+let stepsPerFrame = 20;         // simulation speed (integrator steps per frame)
+let direction = 1;              // +1 forward, -1 backward in time
+let e0 = 0, l0 = [0, 0, 0];
+
+function frame() {
+  if (running && !grab.active) {
+    const spf = Math.max(1, Math.round(stepsPerFrame));
+    if (direction < 0) sim.dt = -DT; else sim.dt = DT;
+    for (let s = 0; s < spf; s++) {
+      sim.step();
+      if (direction > 0) finder.feed(sim);   // detect eclipses going forward
+    }
+    renderer.pushTrail(sim.pos);
+  }
+  renderer.draw(sim.pos);
+  updateHUD();
+  requestAnimationFrame(frame);
+}
+
+// --- heads-up display -------------------------------------------------------
+
+const hud = {
+  date:   document.getElementById('hud-date'),
+  speed:  document.getElementById('hud-speed'),
+  energy: document.getElementById('hud-energy'),
+  angmom: document.getElementById('hud-angmom'),
+  align:  document.getElementById('hud-align'),
+};
+
+function fmtSci(x) {
+  if (x === 0) return '0';
+  const e = Math.floor(Math.log10(Math.abs(x)));
+  const m = x / Math.pow(10, e);
+  return `${m.toFixed(2)}e${e}`;
+}
+
+function updateHUD() {
+  const jd = J2000_JD + sim.time;
+  hud.date.textContent = jdToCalendar(jd);
+  const dirLabel = direction < 0 ? '◀ reverse' : 'forward ▶';
+  const daysPerSec = stepsPerFrame * DT * 60 * direction;
+  hud.speed.textContent = `${dirLabel}  ~${Math.abs(daysPerSec).toFixed(0)} d/s`;
+
+  const e = sim.energy();
+  const l = sim.angularMomentum();
+  const eDrift = e0 !== 0 ? Math.abs((e - e0) / e0) : 0;
+  const lMag0 = Math.hypot(l0[0], l0[1], l0[2]);
+  const lDrift = lMag0 !== 0
+    ? Math.hypot(l[0] - l0[0], l[1] - l0[1], l[2] - l0[2]) / lMag0
+    : 0;
+  hud.energy.textContent = fmtSci(eDrift);
+  hud.angmom.textContent = fmtSci(lDrift);
+
+  const a = currentAlignment(sim.pos);
+  if (a.kind === 'none') {
+    hud.align.textContent = `${a.separationDeg.toFixed(2)}° (no eclipse)`;
+    hud.align.className = '';
+  } else {
+    hud.align.textContent = `${a.kind.toUpperCase()}  mag ${a.magnitude.toFixed(2)}`;
+    hud.align.className = 'eclipse-now';
+  }
+}
+
+// --- eclipse log ------------------------------------------------------------
+
+const eclipseList = [];
+const eclipseListEl = document.getElementById('eclipse-list');
+
+function onEclipse(ev) {
+  // Avoid duplicate logging if we re-cross the same minimum after a reset.
+  eclipseList.push(ev);
+  if (eclipseList.length > 200) eclipseList.shift();
+  refreshEclipseList();
+}
+
+function refreshEclipseList() {
+  if (eclipseList.length === 0) {
+    eclipseListEl.innerHTML = '<li class="muted">none yet — run forward in time</li>';
+    return;
+  }
+  const rows = eclipseList.slice().reverse().map((e) => {
+    const cls = e.kind === 'total' ? 'k-total'
+              : e.kind === 'annular' ? 'k-annular' : 'k-partial';
+    return `<li><span class="kind ${cls}">${e.kind}</span>`
+         + `<span class="when">${e.calendar}</span>`
+         + `<span class="mag">mag ${e.magnitude.toFixed(2)}</span></li>`;
+  });
+  eclipseListEl.innerHTML = rows.join('');
+}
+
+// --- mouse interaction ------------------------------------------------------
+
+let drag = null;          // camera drag: {button, x, y}
+const grab = { active: false, index: -1, lastWorld: null, samples: [] };
+
+function screenToWorldOnEcliptic(sx, sy) {
+  // Invert the orthographic projection back onto the body's current depth.
+  // We approximate by placing the grabbed point at the focus depth: solve for
+  // camera-space (cx, cy) from screen, then undo pitch/yaw at the body's z.
+  const dpr = 1;
+  const cx = (sx * dpr - canvas.clientWidth / 2) / renderer.scale;
+  const cyTop = (canvas.clientHeight / 2 - sy * dpr) / renderer.scale;
+  return { cx, cy: cyTop };
+}
+
+// Convert a screen point to a world position at the same depth as `index`.
+function unprojectAtBody(sx, sy, index) {
+  const { cx, cy } = screenToWorldOnEcliptic(sx, sy);
+  // Current camera-space coords of the body give us its depth (z2) and we keep
+  // it fixed; we only move within the view plane.
+  const i = index;
+  const camB = renderer._toCamera(sim.pos[3*i], sim.pos[3*i+1], sim.pos[3*i+2]);
+  const z2 = camB[2];
+  // Camera space (cx, cy, z2) -> undo pitch -> undo yaw -> world (+ focus).
+  const cp = Math.cos(renderer.pitch), sp = Math.sin(renderer.pitch);
+  const y1 = cp * cy + sp * z2;
+  const z1 = -sp * cy + cp * z2;   // not used for world xy but kept for clarity
+  const x1 = cx;
+  const cyaw = Math.cos(renderer.yaw), syaw = Math.sin(renderer.yaw);
+  const dx =  cyaw * x1 + syaw * y1;
+  const dy = -syaw * x1 + cyaw * y1;
+  return [
+    dx + renderer.focus[0],
+    dy + renderer.focus[1],
+    sim.pos[3*i+2],                // keep original z (stay in its plane)
+  ];
+}
+
+canvas.addEventListener('mousedown', (ev) => {
+  ev.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const sx = ev.clientX - rect.left, sy = ev.clientY - rect.top;
+
+  if (ev.button === 0) {
+    const hit = renderer.pick(sx, sy);
+    if (hit >= 0 && handMode) {
+      // Grab this body: pause integration, start tracking the cursor.
+      grab.active = true;
+      grab.index = hit;
+      grab.samples = [];
+      grab.lastWorld = unprojectAtBody(sx, sy, hit);
+      return;
+    }
+    if (hit >= 0) {
+      renderer.setFocus(hit, sim.pos);
+      focusSelect.value = String(hit);
+      return;
+    }
+    drag = { button: 0, x: sx, y: sy };
+  } else if (ev.button === 2) {
+    drag = { button: 2, x: sx, y: sy };
+  }
+});
+
+window.addEventListener('mousemove', (ev) => {
+  const rect = canvas.getBoundingClientRect();
+  const sx = ev.clientX - rect.left, sy = ev.clientY - rect.top;
+
+  if (grab.active) {
+    const i = grab.index;
+    const world = unprojectAtBody(sx, sy, i);
+    // Move the body to the cursor (drag the planet itself).
+    sim.pos[3*i] = world[0];
+    sim.pos[3*i+1] = world[1];
+    sim.pos[3*i+2] = world[2];
+    sim._computeAcc();
+    // Track recent motion to estimate a flick velocity on release.
+    const now = performance.now();
+    grab.samples.push({ t: now, p: world.slice() });
+    while (grab.samples.length > 5) grab.samples.shift();
+    grab.lastWorld = world;
+    return;
+  }
+
+  if (!drag) return;
+  const dx = sx - drag.x, dy = sy - drag.y;
+  drag.x = sx; drag.y = sy;
+  if (drag.button === 0) {
+    renderer.yaw += dx * 0.01;
+    renderer.pitch = Math.max(-1.5, Math.min(1.5, renderer.pitch + dy * 0.01));
+  } else if (drag.button === 2) {
+    // Pan: shift the focus in the view plane. Free the body lock first.
+    renderer.focusIndex = -1;
+    focusSelect.value = '-1';
+    const k = 1 / renderer.scale;
+    const cyaw = Math.cos(renderer.yaw), syaw = Math.sin(renderer.yaw);
+    renderer.focus[0] -= (cyaw * dx - syaw * -dy) * k;
+    renderer.focus[1] -= (syaw * dx + cyaw * -dy) * k;
+  }
+});
+
+window.addEventListener('mouseup', () => {
+  if (grab.active) finishGrab();
+  drag = null;
+});
+
+canvas.addEventListener('wheel', (ev) => {
+  ev.preventDefault();
+  const f = Math.exp(-ev.deltaY * 0.0015);
+  renderer.scale = Math.max(2, Math.min(4000, renderer.scale * f));
+}, { passive: false });
+
+canvas.addEventListener('contextmenu', (ev) => ev.preventDefault());
+
+// --- control bindings -------------------------------------------------------
+
+const playBtn = document.getElementById('btn-play');
+const focusSelect = document.getElementById('focus-select');
+let handMode = false;
+
+document.getElementById('btn-play').addEventListener('click', () => {
+  running = !running;
+  playBtn.textContent = running ? '❚❚ Pause' : '▶ Play';
+});
+
+document.getElementById('btn-reverse').addEventListener('click', () => {
+  direction = -direction;
+});
+
+document.getElementById('speed').addEventListener('input', (ev) => {
+  stepsPerFrame = Number(ev.target.value);
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  resetSim();
+  renderer.setFocus(Number(focusSelect.value), sim.pos);
+});
+
+document.getElementById('chk-trails').addEventListener('change', (ev) => {
+  renderer.showTrails = ev.target.checked;
+  if (!ev.target.checked) renderer.clearTrails();
+});
+
+document.getElementById('chk-labels').addEventListener('change', (ev) => {
+  renderer.showLabels = ev.target.checked;
+});
+
+const handBtn = document.getElementById('btn-hand');
+handBtn.addEventListener('click', () => {
+  handMode = !handMode;
+  handBtn.classList.toggle('active', handMode);
+  canvas.style.cursor = handMode ? 'grab' : 'default';
+});
+
+// --- camera (real-hand) control --------------------------------------------
+//
+// The HandTracker reports {x,y,pinch,...} per video frame. We translate that
+// into the same grab/move/release machinery as the mouse path above, so the
+// simulation only ever sees one kind of interaction.
+
+const camBtn = document.getElementById('btn-cam');
+const camWrap = document.getElementById('cam-wrap');
+const camStatus = document.getElementById('cam-status');
+const handCursor = document.getElementById('hand-cursor');
+let handTracker = null;
+let handState = { active: false, pinch: false, x: 0, y: 0 };
+
+function onHandFrame(s) {
+  if (!s.present) {
+    handCursor.hidden = true;
+    handState.active = false;
+    // Release any active pinch-grab so it doesn't get stuck.
+    if (grab.active) finishGrab();
+    return;
+  }
+
+  handCursor.hidden = false;
+  handCursor.style.left = `${s.x}px`;
+  handCursor.style.top = `${s.y}px`;
+  handCursor.classList.toggle('pinching', s.pinch);
+  handState = { active: true, pinch: s.pinch, x: s.x, y: s.y };
+
+  // Translate cursor into canvas-local coordinates.
+  const rect = canvas.getBoundingClientRect();
+  const sx = s.x - rect.left;
+  const sy = s.y - rect.top;
+  const insideCanvas = sx >= 0 && sy >= 0 && sx <= rect.width && sy <= rect.height;
+
+  // Pinch starts a grab on the nearest body (if any in canvas).
+  if (s.pinch && !grab.active && insideCanvas) {
+    const hit = renderer.pick(sx, sy);
+    if (hit >= 0) {
+      grab.active = true;
+      grab.index = hit;
+      grab.samples = [];
+      grab.lastWorld = unprojectAtBody(sx, sy, hit);
+    }
+    return;
+  }
+
+  // Drag while pinched: same logic as mousemove during a mouse grab.
+  if (s.pinch && grab.active) {
+    const i = grab.index;
+    const world = unprojectAtBody(sx, sy, i);
+    sim.pos[3*i]   = world[0];
+    sim.pos[3*i+1] = world[1];
+    sim.pos[3*i+2] = world[2];
+    sim._computeAcc();
+    const now = performance.now();
+    grab.samples.push({ t: now, p: world.slice() });
+    while (grab.samples.length > 5) grab.samples.shift();
+    grab.lastWorld = world;
+    return;
+  }
+
+  // Released the pinch: complete the grab and apply the flick velocity.
+  if (!s.pinch && grab.active) finishGrab();
+}
+
+// Wraps the velocity-from-flick logic shared by mouse-up and pinch-release.
+function finishGrab() {
+  if (!grab.active) return;
+  const s = grab.samples;
+  if (s.length >= 2) {
+    const a = s[0], b = s[s.length - 1];
+    const dtSec = (b.t - a.t) / 1000;
+    if (dtSec > 1e-3) {
+      const FLICK_TO_AUPERDAY = 0.15;
+      const i = grab.index;
+      sim.vel[3*i]   = (b.p[0] - a.p[0]) / dtSec * FLICK_TO_AUPERDAY;
+      sim.vel[3*i+1] = (b.p[1] - a.p[1]) / dtSec * FLICK_TO_AUPERDAY;
+      sim.vel[3*i+2] = (b.p[2] - a.p[2]) / dtSec * FLICK_TO_AUPERDAY;
+      sim._computeAcc();
+    }
+  }
+  grab.active = false;
+  grab.index = -1;
+  e0 = sim.energy();
+  l0 = sim.angularMomentum();
+}
+
+async function toggleCamHands() {
+  if (handTracker && handTracker.running) {
+    handTracker.stop();
+    camWrap.hidden = true;
+    handCursor.hidden = true;
+    camBtn.classList.remove('active');
+    return;
+  }
+  camWrap.hidden = false;
+  camBtn.classList.add('active');
+  if (!handTracker) {
+    handTracker = new HandTracker({
+      video: document.getElementById('cam-video'),
+      overlay: document.getElementById('cam-overlay'),
+      onUpdate: onHandFrame,
+      onStatus: (msg) => { camStatus.textContent = msg; },
+    });
+  }
+  try {
+    await handTracker.start();
+  } catch (err) {
+    camStatus.textContent = 'error: ' + (err.message || err);
+    camBtn.classList.remove('active');
+  }
+}
+camBtn.addEventListener('click', () => { toggleCamHands(); });
+
+// Populate the focus selector from the body list.
+BODY_NAMES.forEach((name, i) => {
+  const opt = document.createElement('option');
+  opt.value = String(i);
+  opt.textContent = name;
+  focusSelect.appendChild(opt);
+});
+const freeOpt = document.createElement('option');
+freeOpt.value = '-1';
+freeOpt.textContent = 'Free camera';
+focusSelect.appendChild(freeOpt);
+focusSelect.value = String(INDEX.Earth);
+
+focusSelect.addEventListener('change', (ev) => {
+  const idx = Number(ev.target.value);
+  renderer.setFocus(idx, sim.pos);
+});
+
+// --- boot -------------------------------------------------------------------
+
+resize();
+resetSim();
+renderer.setFocus(INDEX.Earth, sim.pos);
+renderer.scale = 90;
+requestAnimationFrame(frame);
+
+</script>
 </body>
 </html>
