@@ -385,6 +385,13 @@
         Speed (integrator steps / frame)
         <input type="range" id="speed" min="1" max="200" value="20" />
       </label>
+      <div class="btn-row">
+        <button id="btn-j2000">⬅ J2000</button>
+        <button id="btn-moonlanding">🚀 1969</button>
+        <button id="btn-present">📅 Today</button>
+        <button id="btn-future100">⏩ +100y</button>
+        <button id="btn-future1000">⏩ +1000y</button>
+      </div>
     </div>
 
     <div class="group">
@@ -1798,9 +1805,20 @@ function createOrbitLine(name, index, currentState) {
   const e2Len = Math.sqrt(e2x*e2x + e2y*e2y + e2z*e2z);
   const e2xn = e2x / e2Len, e2yn = e2y / e2Len, e2zn = e2z / e2Len;
 
-  const simParams = SIM_PARAMS?.[name] || {};
-  const semiMajorAxis = simParams.semiMajorAxis || simParams.a || r;
-  const eccentricity = (simParams.eccentricity ?? simParams.e ?? (name === 'Mercury' ? 0.21 : 0));
+  // Known orbital parameters (eccentricity, semi-major axis in AU)
+  const ORBITAL_PARAMS = {
+    Mercury: { ecc: 0.2056, a: 0.387 },
+    Venus:   { ecc: 0.0068, a: 0.723 },
+    Earth:   { ecc: 0.0167, a: 1.000 },
+    Mars:    { ecc: 0.0934, a: 1.524 },
+    Jupiter: { ecc: 0.0484, a: 5.203 },
+    Saturn:  { ecc: 0.0539, a: 9.537 },
+    Uranus:  { ecc: 0.0473, a: 19.19 },
+    Neptune: { ecc: 0.0086, a: 30.07 },
+  };
+  const op = ORBITAL_PARAMS[name] || {};
+  const semiMajorAxis = op.a || r;
+  const eccentricity = op.ecc ?? 0;
   const semiMinorAxis = semiMajorAxis * Math.sqrt(Math.max(0, 1 - eccentricity * eccentricity));
   const focusOffset = semiMajorAxis * eccentricity;
 
@@ -2786,8 +2804,42 @@ document.getElementById('speed').addEventListener('input', (ev) => {
 document.getElementById('btn-reset').addEventListener('click', () => {
   resetSim();
   updateMeshes();
-  // Refit orbit lines
   document.getElementById('chk-trails').dispatchEvent(new Event('change'));
+});
+
+// Time travel presets
+const J2000_DAY_MS = 24 * 3600 * 1000;
+function setSimTimeJD(jd) {
+  const dt_days = (jd - J2000_JD) * 86400 / DT; // DT in seconds, time in days
+  const { pos, vel } = seedState();
+  sim = new NBody(pos, vel, GM, DT);
+  const steps = Math.abs(Math.round(dt_days));
+  const stepDir = dt_days >= 0 ? 1 : -1;
+  for (let i = 0; i < steps; i++) {
+    sim.step(stepDir);
+  }
+  sim.time = dt_days * DT;
+  updateMeshes();
+  document.getElementById('chk-trails').dispatchEvent(new Event('change'));
+}
+
+document.getElementById('btn-j2000').addEventListener('click', () => {
+  resetSim(); updateMeshes();
+  document.getElementById('chk-trails').dispatchEvent(new Event('change'));
+});
+document.getElementById('btn-moonlanding').addEventListener('click', () => {
+  // July 20, 1969 ≈ JD 2440423.5
+  setSimTimeJD(2440423.5);
+});
+document.getElementById('btn-present').addEventListener('click', () => {
+  // 2024-01-01 ≈ JD 2460310.5
+  setSimTimeJD(2460310.5);
+});
+document.getElementById('btn-future100').addEventListener('click', () => {
+  setSimTimeJD(J2000_JD + 100 * 365.25);
+});
+document.getElementById('btn-future1000').addEventListener('click', () => {
+  setSimTimeJD(J2000_JD + 1000 * 365.25);
 });
 
 document.getElementById('chk-trails').addEventListener('change', (ev) => {
