@@ -1256,6 +1256,10 @@ const starMat = new THREE.PointsMaterial({
 const stars = new THREE.Points(starGeo, starMat);
 scene.add(stars);
 
+// Starfield twinkling: random phase for each star
+const starPhases = new Float32Array(starCount);
+for (let i = 0; i < starCount; i++) starPhases[i] = Math.random() * Math.PI * 2;
+
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPER: Procedural textures
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2559,6 +2563,15 @@ function animate() {
 
   controls.update();
   updateHUD();
+
+  // Starfield twinkling: subtle opacity pulse
+  const t = performance.now() * 0.001;
+  if (stars && stars.material) {
+    let avgPhase = 0;
+    for (let i = 0; i < starCount; i++) avgPhase += Math.sin(t * 0.7 + starPhases[i]);
+    avgPhase /= starCount;
+    stars.material.opacity = 0.78 + avgPhase * 0.06;
+  }
 
   // Framerate limiter: allow render every frame (no skip — keep smooth on high-refresh displays)
   composer.render(scene, camera);
