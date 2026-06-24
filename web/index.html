@@ -1538,6 +1538,42 @@ function addPlanetToScene(name, index) {
         lensFlares.push(flare);
       }
       mesh.userData.lensFlares = lensFlares;
+
+      // Solar wind particles
+      const windCount = 200;
+      const windPositions = new Float32Array(windCount * 3);
+      const windSizes = new Float32Array(windCount);
+      const windData = []; // per-particle state { phase, speed, life, angle }
+      for (let i = 0; i < windCount; i++) {
+        windData.push({
+          phase: Math.random() * Math.PI * 2,
+          speed: 0.3 + Math.random() * 1.2,
+          life: Math.random(),
+          angle: Math.random() * Math.PI * 2,
+        });
+        windPositions[i*3] = 0;
+        windPositions[i*3+1] = 0;
+        windPositions[i*3+2] = 0;
+        windSizes[i] = 0;
+      }
+      const windGeo = new THREE.BufferGeometry();
+      windGeo.setAttribute('position', new THREE.BufferAttribute(windPositions, 3));
+      windGeo.setAttribute('size', new THREE.BufferAttribute(windSizes, 1));
+      const windTex = makeGlowTexture();
+      const windMat = new THREE.PointsMaterial({
+        map: windTex,
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        opacity: 0.6,
+        depthWrite: false,
+        size: 0.5,
+        sizeAttenuation: true,
+        color: 0xffaa33,
+      });
+      const windParticles = new THREE.Points(windGeo, windMat);
+      scene.add(windParticles);
+      mesh.userData.windParticles = windParticles;
+      mesh.userData.windData = windData;
     }
 
   } else if (name === 'Earth') {
@@ -2666,6 +2702,30 @@ function animate() {
         flares[f].visible = true;
         flares[f].material.opacity = [0.15, 0.10, 0.06][f] * (0.7 + Math.sin(performance.now() * 0.002 + f) * 0.3);
       }
+    }
+    // Solar wind: particles spiral outward from Sun
+    if (sunMesh.userData.windParticles && sunMesh.userData.windData) {
+      const wind = sunMesh.userData.windParticles;
+      const wdata = sunMesh.userData.windData;
+      const pos = wind.geometry.attributes.position.array;
+      const sizes = wind.geometry.attributes.size.array;
+      const t = performance.now() * 0.001;
+      const vR = (VISUAL_BODY_CONFIG.Sun.visualRadius || 0.22);
+      const sunPos = sunMesh.position;
+      for (let i = 0; i < wdata.length; i++) {
+        const d = wdata[i];
+        const r = vR + d.speed * d.life * 1.5;
+        const angle = d.angle + d.life * 0.3;
+        const h = d.speed * d.life * 0.4 * Math.sin(d.phase + t * 0.5);
+        pos[i*3] = sunPos.x + r * Math.cos(angle);
+        pos[i*3+1] = sunPos.y + h;
+        pos[i*3+2] = sunPos.z + r * Math.sin(angle);
+        sizes[i] = Math.max(0, (1 - d.life) * 2.5);
+        d.life += 0.002 * d.speed;
+        if (d.life > 1) { d.life = 0; d.angle = Math.random() * Math.PI * 2; d.speed = 0.3 + Math.random() * 1.2; }
+      }
+      wind.geometry.attributes.position.needsUpdate = true;
+      wind.geometry.attributes.size.needsUpdate = true;
     }
   }
 
