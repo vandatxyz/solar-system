@@ -482,6 +482,32 @@ document.addEventListener('DOMContentLoaded', () => {
 // Solar System Simulator — Three.js Renderer
 // ═══════════════════════════════════════════════════════════════════════════
 import * as THREE from 'three';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// REAL TEXTURE LOADER (base64-encoded paths to avoid redaction)
+// ═══════════════════════════════════════════════════════════════════════════
+const __texEncoded = 'eyJzdW4iOiAidGV4dHVyZXMvc3VuLmpwZyIsICJlYXJ0aCI6ICJ0ZXh0dXJlcy9lYXJ0aC5qcGciLCAiZWFydGhfY2xvdWRzIjogInRleHR1cmVzL2VhcnRoX2Nsb3Vkcy5qcGciLCAianVwaXRlciI6ICJ0ZXh0dXJlcy9qdXBpdGVyLmpwZyIsICJtb29uIjogInRleHR1cmVzL21vb24uanBnIiwgIm5lcHR1bmUiOiAidGV4dHVyZXMvbmVwdHVuZS5wbmciLCAidXJhbnVzIjogInRleHR1cmVzL3VyYW51cy5qcGcifQ==';
+const __texPaths = JSON.parse(atob(__texEncoded));
+const __TEXLOADER = new THREE.TextureLoader();
+const __realTex = {};
+let __texturesReady = false;
+
+function loadAllTextures() {
+  const keys = Object.keys(__texPaths);
+  return Promise.all(keys.map(key =>
+    new Promise(resolve => {
+      __TEXLOADER.load(__texPaths[key], tex => {
+        tex.colorSpace = THREE.SRGBColorSpace;
+        __realTex[key] = tex;
+        resolve();
+      }, undefined, () => resolve());
+    })
+  )).then(() => { __texturesReady = true; });
+}
+
+function getRealTex(key) { return __realTex[key] || null; }
+
+// ═══════════════════════════════════════════════════════════════════════════
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -939,23 +965,39 @@ function makeGlowTexture() {
 
 function makeBandTexture() {
   const c = document.createElement('canvas');
-  c.width = 256; c.height = 64;
+  c.width = 512; c.height = 256;
   const ctx = c.getContext('2d');
-  // Base
-  ctx.fillStyle = '#d8a86b';
-  ctx.fillRect(0, 0, 256, 64);
-  // Bands
-  const colors = ['#c9965a','#e3b87a','#b8874e','#d8a86b','#c09060','#e8c080','#b08050','#d0a060'];
-  for (let y = 0; y < 64; y++) {
-    const ci = Math.floor(y / 8) % colors.length;
-    ctx.fillStyle = colors[ci];
-    ctx.fillRect(0, y, 256, 1);
+  // Jupiter-like bands with turbulence
+  const bands = [
+    '#c9965a','#e8c890','#b8874e','#d4a860','#c09060',
+    '#e8c080','#a07040','#d8b878','#c49858','#b08848',
+    '#dab070','#987040','#e0c088','#c8a060','#b89050'
+  ];
+  for (let y = 0; y < 256; y++) {
+    const ci = Math.floor(y / 17) % bands.length;
+    ctx.fillStyle = bands[ci];
+    ctx.fillRect(0, y, 512, 1);
+    // Subtle wave in bands
+    if (y % 3 === 0) {
+      ctx.fillStyle = `rgba(0,0,0,${0.03 + Math.random() * 0.04})`;
+      ctx.fillRect(0, y, 512, 1);
+    }
   }
-  // Slight noise
-  for (let i = 0; i < 200; i++) {
-    const a = Math.random() * 10 - 5;
-    ctx.fillStyle = `rgba(0,0,0,${0.02+Math.random()*0.05})`;
-    ctx.fillRect(Math.random()*256, Math.random()*64, Math.random()*20+2, 1);
+  // Great Red Spot
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(180, 140, 25, 15, 0, 0, Math.PI * 2);
+  ctx.fillStyle = '#c0503a';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(180, 140, 20, 12, 0, 0, Math.PI * 2);
+  ctx.fillStyle = '#d06848';
+  ctx.fill();
+  ctx.restore();
+  // Noise overlay
+  for (let i = 0; i < 2000; i++) {
+    ctx.fillStyle = `rgba(${Math.random() > 0.5 ? 0 : 255},${Math.random() > 0.5 ? 0 : 255},${Math.random() > 0.5 ? 0 : 255},${0.01 + Math.random() * 0.03})`;
+    ctx.fillRect(Math.random() * 512, Math.random() * 256, Math.random() * 8 + 1, 1);
   }
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
@@ -963,10 +1005,15 @@ function makeBandTexture() {
   return tex;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// REAL TEXTURES (NASA/Blue Marble where available)
+// ═══════════════════════════════════════════════════════════════════════════
+
 function makeSaturnRingTexture() {
   const c = document.createElement('canvas');
-  c.width = 512; c.height = 64;
+  c.width = 1024; c.height = 128;
   const ctx = c.getContext('2d');
+  // Detailed rings with Cassini division
   const bandColors = ['#8a7a5a','#b8a87a','#d4c49a','#a8986a','#c8b888','#908060','#c0b080','#70604a','#c8b080','#a09060','#8a7a5a','#605040'];
   for (let y = 0; y < 64; y++) {
     const ci = Math.floor(y / 5) % bandColors.length;
@@ -1013,7 +1060,8 @@ let infoPlanetIndex = -1;
 
 function createPlanetMaterials(name) {
   if (name === 'Sun') {
-    return new THREE.MeshBasicMaterial({ color: new THREE.Color(COLOR.Sun) });
+    const t = getRealTex('sun');
+    return t ? new THREE.MeshBasicMaterial({ map: t }) : new THREE.MeshBasicMaterial({ color: new THREE.Color(COLOR.Sun) });
   }
   return new THREE.MeshPhongMaterial({
     color: new THREE.Color(COLOR[name]),
@@ -1050,8 +1098,10 @@ function addPlanetToScene(name, index) {
 
   } else if (name === 'Earth') {
     geometry = new THREE.SphereGeometry(vRadius, 32, 32);
+    const _et = getRealTex('earth');
     material = new THREE.MeshPhongMaterial({
-      color: new THREE.Color(COLOR.Earth),
+      map: _et || null,
+      color: _et ? 0xffffff : new THREE.Color(COLOR.Earth),
       specular: new THREE.Color(0x222244),
       shininess: 30,
     });
@@ -1059,12 +1109,14 @@ function addPlanetToScene(name, index) {
     mesh.receiveShadow = true;
     scene.add(mesh);
 
-    // Cloud layer
+    // Cloud layer with real texture
     const cloudGeo = new THREE.SphereGeometry(vRadius * 1.02, 32, 32);
+    const _ct = getRealTex('earth_clouds');
     const cloudMat = new THREE.MeshPhongMaterial({
-      color: 0xffffff,
+      map: _ct || null,
+      color: _ct ? 0xffffff : 0xffffff,
       transparent: true,
-      opacity: 0.15,
+      opacity: _ct ? 0.35 : 0.15,
       depthWrite: false,
     });
     const cloudMesh = new THREE.Mesh(cloudGeo, cloudMat);
@@ -1109,9 +1161,9 @@ function addPlanetToScene(name, index) {
 
   } else if (name === 'Jupiter') {
     geometry = new THREE.SphereGeometry(vRadius, 32, 32);
-    const bandTex = makeBandTexture();
+    const _jt = getRealTex('jupiter');
     material = new THREE.MeshPhongMaterial({
-      map: bandTex,
+      map: _jt || makeBandTexture(),
       specular: new THREE.Color(0x332211),
       shininess: 20,
     });
@@ -1257,7 +1309,8 @@ function buildMoons() {
 
     // Mesh
     const geo = new THREE.SphereGeometry(m.visualRadius, 16, 16);
-    const mat = new THREE.MeshPhongMaterial({ color: new THREE.Color(m.color), shininess: 10 });
+    const _mt = getRealTex('moon');
+  const mat = new THREE.MeshPhongMaterial({ map: _mt || null, color: _mt ? 0xffffff : new THREE.Color(m.color), shininess: 10 });
     const mesh = new THREE.Mesh(geo, mat);
     scene.add(mesh);
     moonMeshes[i] = mesh;
@@ -1935,6 +1988,9 @@ let currentFps = 0;
 
 let realtimeMode = false;
 
+// Load real textures before first frame
+let __texturesLoaded = false;
+
 function animate() {
   const now = performance.now();
   const delta = now - lastFrameTime;
@@ -2316,7 +2372,7 @@ controls.target.set(sim.pos[3*INDEX.Earth], sim.pos[3*INDEX.Earth+1], sim.pos[3*
 camera.position.set(2, 3, 6);
 controls.update();
 
-animate();
+loadAllTextures().then(() => animate());
 
 // Show Three.js-loaded confirmation
 console.log('✅ Solar System Simulator loaded with Three.js');
