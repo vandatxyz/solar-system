@@ -1578,13 +1578,42 @@ function addPlanetToScene(name, index) {
 
     // Atmosphere rim glow
     if (cfg.atmosphere) {
-      const atmoGeo = new THREE.SphereGeometry(vRadius * 1.05, 32, 32);
-      const atmoMat = new THREE.MeshBasicMaterial({
-        color: cfg.atmosphereColor || 0x4488ff,
+      const atmoGeo = new THREE.SphereGeometry(vRadius * 1.09, 48, 48);
+      const atmoMat = new THREE.ShaderMaterial({
         transparent: true,
-        opacity: 0.08,
-        side: THREE.BackSide,
         depthWrite: false,
+        side: THREE.BackSide,
+        blending: THREE.AdditiveBlending,
+        uniforms: {
+          glowColor: { value: new THREE.Color(cfg.atmosphereColor || 0x4da6ff) },
+          opacity: { value: 0.55 },
+          power: { value: 3.2 },
+          viewVector: { value: new THREE.Vector3() },
+        },
+        vertexShader: `
+          varying vec3 vNormal;
+          varying vec3 vViewPosition;
+          void main() {
+            vNormal = normalize(normalMatrix * normal);
+            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+            vViewPosition = -mvPosition.xyz;
+            gl_Position = projectionMatrix * mvPosition;
+          }
+        `,
+        fragmentShader: `
+          uniform vec3 glowColor;
+          uniform float opacity;
+          uniform float power;
+          varying vec3 vNormal;
+          varying vec3 vViewPosition;
+          void main() {
+            vec3 viewDir = normalize(vViewPosition);
+            float rim = 1.0 - max(dot(vNormal, viewDir), 0.0);
+            rim = pow(rim, power);
+            float alpha = rim * opacity;
+            gl_FragColor = vec4(glowColor, alpha);
+          }
+        `,
       });
       const atmoMesh = new THREE.Mesh(atmoGeo, atmoMat);
       mesh.userData.atmosphere = atmoMesh;
