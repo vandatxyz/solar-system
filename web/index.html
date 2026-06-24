@@ -1737,16 +1737,13 @@ for (let i = 0; i < BODY_NAMES.length; i++) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function createOrbitLine(name, index, currentState) {
-  // Generate orbit by sampling many positions on a circle fitted from state
-  const visualRadius = VISUAL_RADIUS_SCALE[name];
+  // Generate orbit by sampling an ellipse in the orbital plane.
   if (name === 'Sun' || name === 'Moon') return null;
 
-  // Use provided current state (after grab) or J2000 state to estimate orbital path
   const s = currentState || J2000_STATE[name];
   const r = Math.sqrt(s.pos[0]*s.pos[0] + s.pos[1]*s.pos[1] + s.pos[2]*s.pos[2]);
   if (r < 0.01) return null;
 
-  // Determine orbital plane normal from position and velocity cross product
   const px = s.pos[0], py = s.pos[1], pz = s.pos[2];
   const vx = s.vel[0], vy = s.vel[1], vz = s.vel[2];
   const nx = py*vz - pz*vy;
@@ -1755,27 +1752,30 @@ function createOrbitLine(name, index, currentState) {
   const nLen = Math.sqrt(nx*nx + ny*ny + nz*nz);
   if (nLen < 1e-10) return null;
 
-  // Build a circle in the orbital plane
   const segments = 128;
   const positions = new Float32Array(segments * 3);
 
-  // Build basis vectors in the orbital plane
-  // e1 = direction to periapsis (approximately normalized pos)
   const e1x = px / r, e1y = py / r, e1z = pz / r;
-  // e2 = n × e1
   const e2x = ny/r - nz*e1y;
   const e2y = nz/r - nx*e1z;
   const e2z = nx/r - ny*e1x;
-  // Actually properly normalize e2
   const e2Len = Math.sqrt(e2x*e2x + e2y*e2y + e2z*e2z);
   const e2xn = e2x / e2Len, e2yn = e2y / e2Len, e2zn = e2z / e2Len;
+
+  const simParams = SIM_PARAMS?.[name] || {};
+  const semiMajorAxis = simParams.semiMajorAxis || simParams.a || r;
+  const eccentricity = (simParams.eccentricity ?? simParams.e ?? (name === 'Mercury' ? 0.21 : 0));
+  const semiMinorAxis = semiMajorAxis * Math.sqrt(Math.max(0, 1 - eccentricity * eccentricity));
+  const focusOffset = semiMajorAxis * eccentricity;
 
   for (let j = 0; j < segments; j++) {
     const theta = (j / segments) * Math.PI * 2;
     const c = Math.cos(theta), s2 = Math.sin(theta);
-    positions[j*3] = r * (c * e1x + s2 * e2xn);
-    positions[j*3+1] = r * (c * e1y + s2 * e2yn);
-    positions[j*3+2] = r * (c * e1z + s2 * e2zn);
+    const x = semiMajorAxis * c - focusOffset;
+    const y = semiMinorAxis * s2;
+    positions[j*3] = x * e1x + y * e2xn;
+    positions[j*3+1] = x * e1y + y * e2yn;
+    positions[j*3+2] = x * e1z + y * e2zn;
   }
 
   const geo = new THREE.BufferGeometry();
