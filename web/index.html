@@ -2330,11 +2330,21 @@ function showInfoPanel(index) {
   const massKg = MASS_KG[name];
   const massStr = massKg ? massKg.toExponential(2) + ' kg' : 'N/A';
 
+  // Additional info from VISUAL_BODY_CONFIG
+  const cfg = VISUAL_BODY_CONFIG[name] || {};
+  const rotPeriod = cfg.rotationPeriodDays;
+  const rotStr = rotPeriod ? (Math.abs(rotPeriod).toFixed(1) + ' days' + (rotPeriod < 0 ? ' (retrograde)' : '')) : 'N/A';
+  const tiltStr = cfg.axialTiltDeg != null ? cfg.axialTiltDeg.toFixed(1) + '°' : 'N/A';
+  const atmoStr = cfg.atmosphere ? '✓ ' + cfg.atmosphere : (cfg.atmosphereColor ? '✓ (color: ' + cfg.atmosphereColor + ')' : 'N/A');
+
   infoPanel.innerHTML = `
     <div class="info-name" style="color:${COLOR[name]}">${name}</div>
     <div class="info-row"><span class="info-label">Radius</span><span class="info-val">${radiusKm} km</span></div>
     <div class="info-row"><span class="info-label">Mass</span><span class="info-val">${massStr}</span></div>
     <div class="info-row"><span class="info-label">Distance from Sun</span><span class="info-val">${distAu} AU</span></div>
+    <div class="info-row"><span class="info-label">Rotation</span><span class="info-val">${rotStr}</span></div>
+    <div class="info-row"><span class="info-label">Axial Tilt</span><span class="info-val">${tiltStr}</span></div>
+    <div class="info-row"><span class="info-label">Atmosphere</span><span class="info-val">${atmoStr}</span></div>
   `;
   infoPanel.style.display = 'block';
   infoPanelVisible = true;
