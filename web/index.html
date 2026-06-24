@@ -482,30 +482,239 @@ document.addEventListener('DOMContentLoaded', () => {
 // Solar System Simulator — Three.js Renderer
 // ═══════════════════════════════════════════════════════════════════════════
 import * as THREE from 'three';
+// ═══════════════════════════════════════════════════════════════════════════
+// CONFIG-DRIVEN VISUAL BODY PROPERTIES
+// ═══════════════════════════════════════════════════════════════════════════
+
+const VISUAL_BODY_CONFIG = {
+  Sun: {
+    type: "star",
+    visualRadius: 0.18,
+    fallbackColor: 0xffb347,
+    emissiveColor: 0xff9d00,
+    emissiveIntensity: 3.0,
+    glow: true,
+    fireShader: true,
+    texture: "./textures/sun/sun.jpg"
+  },
+  Mercury: {
+    type: "planet",
+    visualRadius: 0.018,
+    fallbackColor: 0x8c8c8c,
+    texture: "./textures/mercury/mercury.jpg",
+    bumpMap: "./textures/mercury/mercury_bump.jpg",
+    axialTiltDeg: 0.03,
+    rotationPeriodDays: 58.646
+  },
+  Venus: {
+    type: "planet",
+    visualRadius: 0.044,
+    fallbackColor: 0xd9b56c,
+    texture: "./textures/venus/venus.jpg",
+    atmosphere: true,
+    atmosphereColor: 0xffcc88,
+    axialTiltDeg: 177.4,
+    rotationPeriodDays: -243.025
+  },
+  Earth: {
+    type: "planet",
+    visualRadius: 0.046,
+    fallbackColor: 0x2d6cdf,
+    texture: "./textures/earth/earth_day.jpg",
+    bumpMap: "./textures/earth/earth_bump.jpg",
+    normalMap: "./textures/earth/earth_normal.jpg",
+    specularMap: "./textures/earth/earth_specular.jpg",
+    cloudMap: "./textures/earth/earth_clouds.jpg",
+    atmosphere: true,
+    atmosphereColor: 0x4da6ff,
+    cloudRadiusMultiplier: 1.012,
+    axialTiltDeg: 23.44,
+    rotationPeriodDays: 0.99726968
+  },
+  Mars: {
+    type: "planet",
+    visualRadius: 0.024,
+    fallbackColor: 0xb55332,
+    texture: "./textures/mars/mars.jpg",
+    bumpMap: "./textures/mars/mars_bump.jpg",
+    axialTiltDeg: 25.19,
+    rotationPeriodDays: 1.02595675
+  },
+  Jupiter: {
+    type: "planet",
+    visualRadius: 0.11,
+    fallbackColor: 0xd8b38a,
+    texture: "./textures/jupiter/jupiter.jpg",
+    axialTiltDeg: 3.13,
+    rotationPeriodDays: 0.41354
+  },
+  Saturn: {
+    type: "planet",
+    visualRadius: 0.095,
+    fallbackColor: 0xd8c28a,
+    texture: "./textures/saturn/saturn.jpg",
+    ringTexture: "./textures/saturn/saturn_ring.png",
+    ringInnerRadius: 1.25,
+    ringOuterRadius: 2.25,
+    axialTiltDeg: 26.73,
+    rotationPeriodDays: 0.444
+  },
+  Uranus: {
+    type: "planet",
+    visualRadius: 0.065,
+    fallbackColor: 0x9fd8df,
+    texture: "./textures/uranus/uranus.jpg",
+    ringTexture: "./textures/uranus/uranus_ring.png",
+    ringInnerRadius: 1.35,
+    ringOuterRadius: 1.8,
+    axialTiltDeg: 97.77,
+    rotationPeriodDays: -0.718
+  },
+  Neptune: {
+    type: "planet",
+    visualRadius: 0.064,
+    fallbackColor: 0x315bdc,
+    texture: "./textures/neptune/neptune.jpg",
+    axialTiltDeg: 28.32,
+    rotationPeriodDays: 0.671
+  },
+  Moon: {
+    type: "moon",
+    visualRadius: 0.012,
+    fallbackColor: 0xb8b8b8,
+    texture: "./textures/moon/moon.jpg",
+    bumpMap: "./textures/moon/moon_bump.jpg",
+    rotationPeriodDays: 27.321661
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SUN FIRE SHADERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+const sunVertexShader = `
+  varying vec2 vUv;
+  varying vec3 vNormal;
+  void main() {
+    vUv = uv;
+    vNormal = normalize(normalMatrix * normal);
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const sunFragmentShader = `
+  uniform float time;
+  varying vec2 vUv;
+  varying vec3 vNormal;
+
+  // Simplex noise
+  vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+  vec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+  vec3 permute(vec3 x) { return mod289(((x*34.0)+1.0)*x); }
+
+  float snoise(vec2 v) {
+    const vec4 C = vec4(0.211324865405187, 0.366025403784439,
+                       -0.577350269189626, 0.024390243902439);
+    vec2 i  = floor(v + dot(v, C.yy));
+    vec2 x0 = v -   i + dot(i, C.xx);
+    vec2 i1;
+    i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+    vec4 x12 = x0.xyxy + C.xxzz;
+    x12.xy -= i1;
+    i = mod289(i);
+    vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0))
+      + i.x + vec3(0.0, i1.x, 1.0));
+    vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy),
+      dot(x12.zw,x12.zw)), 0.0);
+    m = m*m;
+    m = m*m;
+    vec3 x = 2.0 * fract(p * C.www) - 1.0;
+    vec3 h = abs(x) - 0.5;
+    vec3 ox = floor(x + 0.5);
+    vec3 a0 = x - ox;
+    m *= 1.79284291400159 - 0.85373472095314 * (a0*a0 + h*h);
+    vec3 g;
+    g.x = a0.x * x0.x + h.x * x0.y;
+    g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+    return 130.0 * dot(m, g);
+  }
+
+  void main() {
+    vec2 uv = vUv;
+    float n = snoise(uv * 4.0 + time * 0.2) * 0.5 + 0.5;
+    n += snoise(uv * 8.0 - time * 0.3) * 0.25;
+    n += snoise(uv * 16.0 + time * 0.1) * 0.125;
+
+    vec3 hot = vec3(1.0, 0.9, 0.3);
+    vec3 cool = vec3(0.8, 0.2, 0.0);
+    vec3 color = mix(cool, hot, n);
+
+    // Limb darkening
+    float fresnel = pow(1.0 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.0);
+    color *= (1.0 - fresnel * 0.3);
+
+    gl_FragColor = vec4(color, 1.0);
+  }
+`;
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // REAL TEXTURE LOADER (base64-encoded paths to avoid redaction)
 // ═══════════════════════════════════════════════════════════════════════════
-const __texEncoded = 'eyJzdW4iOiAidGV4dHVyZXMvc3VuLmpwZyIsICJlYXJ0aCI6ICJ0ZXh0dXJlcy9lYXJ0aC5qcGciLCAiZWFydGhfY2xvdWRzIjogInRleHR1cmVzL2VhcnRoX2Nsb3Vkcy5qcGciLCAianVwaXRlciI6ICJ0ZXh0dXJlcy9qdXBpdGVyLmpwZyIsICJtb29uIjogInRleHR1cmVzL21vb24uanBnIiwgIm5lcHR1bmUiOiAidGV4dHVyZXMvbmVwdHVuZS5wbmciLCAidXJhbnVzIjogInRleHR1cmVzL3VyYW51cy5qcGcifQ==';
-const __texPaths = JSON.parse(atob(__texEncoded));
-const __TEXLOADER = new THREE.TextureLoader();
-const __realTex = {};
+// ═══════════════════════════════════════════════════════════════════════════
+// CONFIG-DRIVEN TEXTURE LOADING (with retry + fallback to color)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const __texLoader = new THREE.TextureLoader();
+const __loadedTextures = {};
 let __texturesReady = false;
 
-function loadAllTextures() {
-  const keys = Object.keys(__texPaths);
-  return Promise.all(keys.map(key =>
-    new Promise(resolve => {
-      __TEXLOADER.load(__texPaths[key], tex => {
+function _loadTexWithRetry(path, retries = 2) {
+  return new Promise(resolve => {
+    const attempt = (n) => {
+      __texLoader.load(path, tex => {
         tex.colorSpace = THREE.SRGBColorSpace;
-        __realTex[key] = tex;
-        resolve();
-      }, undefined, () => resolve());
-    })
-  )).then(() => { __texturesReady = true; });
+        tex.needsUpdate = true;
+        resolve(tex);
+      }, undefined, () => {
+        if (n > 0) {
+          setTimeout(() => attempt(n - 1), 300);
+        } else {
+          resolve(null); // fallback: caller uses fallbackColor
+        }
+      });
+    };
+    attempt(retries);
+  });
 }
 
-function getRealTex(key) { return __realTex[key] || null; }
+function loadConfigTextures() {
+  const promises = [];
+  for (const [name, cfg] of Object.entries(VISUAL_BODY_CONFIG)) {
+    const lower = name.toLowerCase();
+    const mapDefs = [
+      ['tex',     cfg.texture],
+      ['bump',    cfg.bumpMap],
+      ['normal',  cfg.normalMap],
+      ['specular', cfg.specularMap],
+      ['cloud',   cfg.cloudMap],
+      ['ring',    cfg.ringTexture],
+    ];
+    for (const [suffix, path] of mapDefs) {
+      if (!path) continue;
+      const key = lower + '_' + suffix;
+      promises.push(_loadTexWithRetry(path).then(tex => {
+        if (tex) __loadedTextures[key] = tex;
+      }));
+    }
+  }
+  return Promise.all(promises).then(() => { __texturesReady = true; });
+}
+
+function getConfigTex(name, suffix) {
+  const key = name.toLowerCase() + '_' + suffix;
+  return __loadedTextures[key] || null;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -687,7 +896,9 @@ class EclipseFinder{
     if(!(f1<f0&&f1<f2))return;const den=f0-2*f1+f2;if(den<=0)return;
     const d=0.5*(f0-f2)/den;let sm=f1-0.25*(f0-f2)*d;sm=Math.max(sm,0);
     const{kind,magnitude}=classify(b.s,b.m,sm);if(kind==='none')return;
-    const h=b.t-a.t,tm=b.t+d*h,jd=this.jd0+tm;
+    // Use absolute time span so JD is correct in both forward and reverse
+    const h=Math.abs(b.t-a.t);
+    const tMid=Math.min(a.t,b.t)+d*h;const jd=this.jd0+tMid;
     const ev={jd,calendar:jdToCalendar(jd),kind,separationDeg:sm*_R2D,magnitude};
     this.events.push(ev);if(this.onEvent)this.onEvent(ev);
   }
@@ -1036,20 +1247,11 @@ function makeSaturnRingTexture() {
 // BUILD PLANETS
 // ═══════════════════════════════════════════════════════════════════════════
 
-// Visual scale factor: separate visual radius from real orbital distances
-// We want planets to be visible but not overlapping
-const VISUAL_RADIUS_SCALE = {
-  Sun: 0.5,
-  Mercury: 0.08,
-  Venus: 0.15,
-  Earth: 0.16,
-  Moon: 0.06,
-  Mars: 0.12,
-  Jupiter: 0.35,
-  Saturn: 0.3,
-  Uranus: 0.22,
-  Neptune: 0.2,
-};
+// Visual scale factor: read from VISUAL_BODY_CONFIG
+const VISUAL_RADIUS_SCALE = {};
+for (const [name, cfg] of Object.entries(VISUAL_BODY_CONFIG)) {
+  VISUAL_RADIUS_SCALE[name] = cfg.visualRadius;
+}
 
 const planetMeshes = [];
 const planetOrbitLines = [];
@@ -1059,12 +1261,16 @@ let infoPanelVisible = false;
 let infoPlanetIndex = -1;
 
 function createPlanetMaterials(name) {
+  const cfg = VISUAL_BODY_CONFIG[name];
+  const fbColor = cfg ? cfg.fallbackColor : COLOR[name];
   if (name === 'Sun') {
-    const t = getRealTex('sun');
-    return t ? new THREE.MeshBasicMaterial({ map: t }) : new THREE.MeshBasicMaterial({ color: new THREE.Color(COLOR.Sun) });
+    const t = getConfigTex('Sun', 'tex');
+    return t ? new THREE.MeshBasicMaterial({ map: t }) : new THREE.MeshBasicMaterial({ color: new THREE.Color(fbColor) });
   }
+  const tex = getConfigTex(name, 'tex');
   return new THREE.MeshPhongMaterial({
-    color: new THREE.Color(COLOR[name]),
+    map: tex || null,
+    color: tex ? 0xffffff : new THREE.Color(fbColor),
     specular: new THREE.Color(0x333333),
     shininess: 25,
     emissive: new THREE.Color(0x000000),
@@ -1072,51 +1278,76 @@ function createPlanetMaterials(name) {
 }
 
 function addPlanetToScene(name, index) {
-  const vRadius = VISUAL_RADIUS_SCALE[name];
+  const cfg = VISUAL_BODY_CONFIG[name] || {};
+  const vRadius = cfg.visualRadius || VISUAL_RADIUS_SCALE[name] || 0.1;
   let geometry, material, mesh;
 
   if (name === 'Sun') {
-    // Sun as emissive sphere
-    geometry = new THREE.SphereGeometry(vRadius, 32, 32);
-    material = new THREE.MeshBasicMaterial({ color: new THREE.Color(COLOR.Sun) });
+    // Sun: fire ShaderMaterial with animated noise
+    geometry = new THREE.SphereGeometry(vRadius, 64, 64);
+    if (cfg.fireShader) {
+      material = new THREE.ShaderMaterial({
+        uniforms: {
+          time: { value: 0.0 },
+        },
+        vertexShader: sunVertexShader,
+        fragmentShader: sunFragmentShader,
+      });
+    } else {
+      const tex = getConfigTex('Sun', 'tex');
+      material = tex
+        ? new THREE.MeshBasicMaterial({ map: tex })
+        : new THREE.MeshBasicMaterial({ color: new THREE.Color(cfg.fallbackColor || 0xffb347) });
+    }
     mesh = new THREE.Mesh(geometry, material);
     scene.add(mesh);
 
     // Sun glow sprite
-    const glowTex = makeGlowTexture();
-    const glowMat = new THREE.SpriteMaterial({
-      map: glowTex,
-      blending: THREE.AdditiveBlending,
-      transparent: true,
-      opacity: 0.6,
-      depthWrite: false,
-    });
-    const glow = new THREE.Sprite(glowMat);
-    glow.scale.set(vRadius * 6, vRadius * 6, 1);
-    scene.add(glow);
-    mesh.userData.glow = glow;
+    if (cfg.glow) {
+      const glowTex = makeGlowTexture();
+      const glowMat = new THREE.SpriteMaterial({
+        map: glowTex,
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        opacity: 0.6,
+        depthWrite: false,
+      });
+      const glow = new THREE.Sprite(glowMat);
+      glow.scale.set(vRadius * 6, vRadius * 6, 1);
+      scene.add(glow);
+      mesh.userData.glow = glow;
+    }
 
   } else if (name === 'Earth') {
-    geometry = new THREE.SphereGeometry(vRadius, 32, 32);
-    const _et = getRealTex('earth');
+    // Earth: realistic MeshPhongMaterial with multiple maps
+    geometry = new THREE.SphereGeometry(vRadius, 64, 64);
+    const dayTex = getConfigTex('Earth', 'tex');
+    const bumpTex = getConfigTex('Earth', 'bump');
+    const normalTex = getConfigTex('Earth', 'normal');
+    const specTex = getConfigTex('Earth', 'specular');
     material = new THREE.MeshPhongMaterial({
-      map: _et || null,
-      color: _et ? 0xffffff : new THREE.Color(COLOR.Earth),
-      specular: new THREE.Color(0x222244),
+      map: dayTex || null,
+      color: dayTex ? 0xffffff : new THREE.Color(cfg.fallbackColor || 0x2d6cdf),
+      bumpMap: bumpTex || null,
+      bumpScale: bumpTex ? 0.03 : 0,
+      normalMap: normalTex || null,
+      specularMap: specTex || null,
+      specular: new THREE.Color(0x444466),
       shininess: 30,
     });
     mesh = new THREE.Mesh(geometry, material);
     mesh.receiveShadow = true;
     scene.add(mesh);
 
-    // Cloud layer with real texture
-    const cloudGeo = new THREE.SphereGeometry(vRadius * 1.02, 32, 32);
-    const _ct = getRealTex('earth_clouds');
+    // Cloud layer
+    const cloudMult = cfg.cloudRadiusMultiplier || 1.012;
+    const cloudGeo = new THREE.SphereGeometry(vRadius * cloudMult, 64, 64);
+    const cloudTex = getConfigTex('Earth', 'cloud');
     const cloudMat = new THREE.MeshPhongMaterial({
-      map: _ct || null,
-      color: _ct ? 0xffffff : 0xffffff,
+      map: cloudTex || null,
+      color: cloudTex ? 0xffffff : 0xffffff,
       transparent: true,
-      opacity: _ct ? 0.35 : 0.15,
+      opacity: cloudTex ? 0.35 : 0.15,
       depthWrite: false,
     });
     const cloudMesh = new THREE.Mesh(cloudGeo, cloudMat);
@@ -1124,22 +1355,26 @@ function addPlanetToScene(name, index) {
     scene.add(cloudMesh);
 
     // Atmosphere rim glow
-    const atmoGeo = new THREE.SphereGeometry(vRadius * 1.05, 32, 32);
-    const atmoMat = new THREE.MeshBasicMaterial({
-      color: 0x4488ff,
-      transparent: true,
-      opacity: 0.08,
-      side: THREE.BackSide,
-      depthWrite: false,
-    });
-    const atmoMesh = new THREE.Mesh(atmoGeo, atmoMat);
-    mesh.userData.atmosphere = atmoMesh;
-    scene.add(atmoMesh);
+    if (cfg.atmosphere) {
+      const atmoGeo = new THREE.SphereGeometry(vRadius * 1.05, 32, 32);
+      const atmoMat = new THREE.MeshBasicMaterial({
+        color: cfg.atmosphereColor || 0x4488ff,
+        transparent: true,
+        opacity: 0.08,
+        side: THREE.BackSide,
+        depthWrite: false,
+      });
+      const atmoMesh = new THREE.Mesh(atmoGeo, atmoMat);
+      mesh.userData.atmosphere = atmoMesh;
+      scene.add(atmoMesh);
+    }
 
   } else if (name === 'Venus') {
     geometry = new THREE.SphereGeometry(vRadius, 32, 32);
+    const tex = getConfigTex('Venus', 'tex');
     material = new THREE.MeshPhongMaterial({
-      color: new THREE.Color(COLOR.Venus),
+      map: tex || null,
+      color: tex ? 0xffffff : new THREE.Color(cfg.fallbackColor || 0xd9b56c),
       specular: new THREE.Color(0x332211),
       shininess: 15,
     });
@@ -1147,23 +1382,25 @@ function addPlanetToScene(name, index) {
     scene.add(mesh);
 
     // Venus atmosphere glow
-    const vaGeo = new THREE.SphereGeometry(vRadius * 1.06, 32, 32);
-    const vaMat = new THREE.MeshBasicMaterial({
-      color: 0xffcc88,
-      transparent: true,
-      opacity: 0.06,
-      side: THREE.BackSide,
-      depthWrite: false,
-    });
-    const vaMesh = new THREE.Mesh(vaGeo, vaMat);
-    mesh.userData.atmosphere = vaMesh;
-    scene.add(vaMesh);
+    if (cfg.atmosphere) {
+      const vaGeo = new THREE.SphereGeometry(vRadius * 1.06, 32, 32);
+      const vaMat = new THREE.MeshBasicMaterial({
+        color: cfg.atmosphereColor || 0xffcc88,
+        transparent: true,
+        opacity: 0.06,
+        side: THREE.BackSide,
+        depthWrite: false,
+      });
+      const vaMesh = new THREE.Mesh(vaGeo, vaMat);
+      mesh.userData.atmosphere = vaMesh;
+      scene.add(vaMesh);
+    }
 
   } else if (name === 'Jupiter') {
     geometry = new THREE.SphereGeometry(vRadius, 32, 32);
-    const _jt = getRealTex('jupiter');
+    const tex = getConfigTex('Jupiter', 'tex');
     material = new THREE.MeshPhongMaterial({
-      map: _jt || makeBandTexture(),
+      map: tex || makeBandTexture(),
       specular: new THREE.Color(0x332211),
       shininess: 20,
     });
@@ -1171,10 +1408,13 @@ function addPlanetToScene(name, index) {
     mesh.receiveShadow = true;
     scene.add(mesh);
 
-  } else if (name === 'Saturn') {
+  } else if (cfg.ringTexture) {
+    // Saturn / Uranus — planet with rings
     geometry = new THREE.SphereGeometry(vRadius, 32, 32);
+    const tex = getConfigTex(name, 'tex');
     material = new THREE.MeshPhongMaterial({
-      color: new THREE.Color(COLOR.Saturn),
+      map: tex || null,
+      color: tex ? 0xffffff : new THREE.Color(cfg.fallbackColor || COLOR[name]),
       specular: new THREE.Color(0x443322),
       shininess: 20,
     });
@@ -1182,20 +1422,35 @@ function addPlanetToScene(name, index) {
     mesh.receiveShadow = true;
     scene.add(mesh);
 
-    // Saturn rings
-    const innerR = vRadius * 1.3;
-    const outerR = vRadius * 2.6;
+    // Rings from config
+    const ringTex = getConfigTex(name, 'ring');
+    const innerR = vRadius * (cfg.ringInnerRadius || 1.3);
+    const outerR = vRadius * (cfg.ringOuterRadius || 2.6);
     const ringGeo = new THREE.RingGeometry(innerR, outerR, 64);
-    const ringTex = makeSaturnRingTexture();
-    const ringMat = new THREE.MeshStandardMaterial({
-      map: ringTex,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.8,
-      depthWrite: false,
-      roughness: 0.7,
-      metalness: 0.1,
-    });
+    let ringMat;
+    if (ringTex) {
+      ringMat = new THREE.MeshStandardMaterial({
+        map: ringTex,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.8,
+        depthWrite: false,
+        roughness: 0.7,
+        metalness: 0.1,
+      });
+    } else {
+      // Procedural fallback with Cassini division
+      const fallbackTex = makeSaturnRingTexture();
+      ringMat = new THREE.MeshStandardMaterial({
+        map: fallbackTex,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.7,
+        depthWrite: false,
+        roughness: 0.7,
+        metalness: 0.1,
+      });
+    }
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.receiveShadow = true;
     ring.rotation.x = -0.5;
@@ -1204,7 +1459,8 @@ function addPlanetToScene(name, index) {
     scene.add(ring);
 
   } else {
-    geometry = new THREE.SphereGeometry(vRadius, 24, 24);
+    // Default planet path (Mars, Mercury, Neptune, etc.)
+    geometry = new THREE.SphereGeometry(vRadius, 32, 32);
     material = createPlanetMaterials(name);
     mesh = new THREE.Mesh(geometry, material);
     mesh.receiveShadow = true;
@@ -1229,14 +1485,13 @@ for (let i = 0; i < BODY_NAMES.length; i++) {
 // ORBIT TRAIL LINES
 // ═══════════════════════════════════════════════════════════════════════════
 
-function createOrbitLine(name, index) {
-  // Generate orbit by sampling many positions on a circle fitted from initial state
+function createOrbitLine(name, index, currentState) {
+  // Generate orbit by sampling many positions on a circle fitted from state
   const visualRadius = VISUAL_RADIUS_SCALE[name];
   if (name === 'Sun' || name === 'Moon') return null;
 
-  // Use the J2000 position to estimate orbital path - draw a ring at the body's
-  // current distance from origin, in its approximate orbital plane
-  const s = J2000_STATE[name];
+  // Use provided current state (after grab) or J2000 state to estimate orbital path
+  const s = currentState || J2000_STATE[name];
   const r = Math.sqrt(s.pos[0]*s.pos[0] + s.pos[1]*s.pos[1] + s.pos[2]*s.pos[2]);
   if (r < 0.01) return null;
 
@@ -1309,8 +1564,8 @@ function buildMoons() {
 
     // Mesh
     const geo = new THREE.SphereGeometry(m.visualRadius, 16, 16);
-    const _mt = getRealTex('moon');
-  const mat = new THREE.MeshPhongMaterial({ map: _mt || null, color: _mt ? 0xffffff : new THREE.Color(m.color), shininess: 10 });
+    const _mt = getConfigTex('Moon', 'tex');
+    const mat = new THREE.MeshPhongMaterial({ map: _mt || null, color: _mt ? 0xffffff : new THREE.Color(m.color), shininess: 10 });
     const mesh = new THREE.Mesh(geo, mat);
     scene.add(mesh);
     moonMeshes[i] = mesh;
@@ -1575,12 +1830,11 @@ function updateMeshes() {
 
     const name = BODY_NAMES[i];
 
-    // Rotate body by real rotation period (sim.dt is in days)
-    const _rotPeriods = { Sun:25.05, Mercury:58.65, Venus:-243.02, Earth:1.0,
-      Moon:27.32, Mars:1.03, Jupiter:0.41, Saturn:0.44, Uranus:-0.72, Neptune:0.67 };
-    const _period = _rotPeriods[name] || 1.0;
+    // Rotate body by real rotation period from config (sim.dt is in days)
+    const _cfgRot = VISUAL_BODY_CONFIG[name];
+    const _period = _cfgRot ? (_cfgRot.rotationPeriodDays || 1.0) : 1.0;
     const _rotSpeed = (2 * Math.PI) / _period; // rad per day
-    mesh.rotation.y += _rotSpeed * Math.abs(sim.dt);
+    mesh.rotation.y += _rotSpeed * sim.dt;
 
     // Update Sun glow position
     if (name === 'Sun' && mesh.userData.glow) {
@@ -1954,13 +2208,16 @@ function finishGrab() {
   e0 = sim.energy();
   l0 = sim.angularMomentum();
 
-  // Rebuild orbit trail for the grabbed body
+  // Rebuild orbit trail for the grabbed body using current state
   if (idx >= 0 && planetOrbitLines[idx]) {
     const oldLine = planetOrbitLines[idx];
     scene.remove(oldLine);
     if (oldLine.geometry) oldLine.geometry.dispose();
     if (oldLine.material) oldLine.material.dispose();
-    planetOrbitLines[idx] = createOrbitLine(BODY_NAMES[idx], idx);
+    // Use current sim state (with new velocity) for the orbit line
+    const curPos = [sim.pos[3*idx], sim.pos[3*idx+1], sim.pos[3*idx+2]];
+    const curVel = [sim.vel[3*idx], sim.vel[3*idx+1], sim.vel[3*idx+2]];
+    planetOrbitLines[idx] = createOrbitLine(BODY_NAMES[idx], idx, {pos: curPos, vel: curVel});
   }
 }
 
@@ -2069,11 +2326,17 @@ function animate() {
     if (t >= 1) camLerpActive = false;
   }
 
-  // Sun glow pulsing
-  if (planetMeshes[INDEX.Sun] && planetMeshes[INDEX.Sun].userData.glow) {
-    const glow = planetMeshes[INDEX.Sun].userData.glow;
-    glow.material.opacity = 0.15 + 0.05 * Math.sin(performance.now() * 0.002);
-    glow.scale.setScalar(VISUAL_RADIUS_SCALE.Sun * 6 + 0.5 * Math.sin(performance.now() * 0.001));
+  // Sun glow pulsing + fire shader time update
+  const sunMesh = planetMeshes[INDEX.Sun];
+  if (sunMesh) {
+    if (sunMesh.material.uniforms && sunMesh.material.uniforms.time) {
+      sunMesh.material.uniforms.time.value = performance.now() * 0.001;
+    }
+    if (sunMesh.userData.glow) {
+      const glow = sunMesh.userData.glow;
+      glow.material.opacity = 0.15 + 0.05 * Math.sin(performance.now() * 0.002);
+      glow.scale.setScalar(VISUAL_RADIUS_SCALE.Sun * 6 + 0.5 * Math.sin(performance.now() * 0.001));
+    }
   }
 
   controls.update();
@@ -2372,7 +2635,7 @@ controls.target.set(sim.pos[3*INDEX.Earth], sim.pos[3*INDEX.Earth+1], sim.pos[3*
 camera.position.set(2, 3, 6);
 controls.update();
 
-loadAllTextures().then(() => animate());
+loadConfigTextures().then(() => animate());
 
 // Show Three.js-loaded confirmation
 console.log('✅ Solar System Simulator loaded with Three.js');
