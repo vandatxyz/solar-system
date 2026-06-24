@@ -1481,6 +1481,25 @@ function addPlanetToScene(name, index) {
       coronaWisp.scale.set(vRadius * 8, vRadius * 8, 1);
       scene.add(coronaWisp);
       mesh.userData.coronaWisp = coronaWisp;
+
+      // Lens flare sprites (simple additive sprites along Sun-camera axis)
+      const lensFlares = [];
+      for (let f = 0; f < 3; f++) {
+        const flareMat = new THREE.SpriteMaterial({
+          map: glowTex,
+          blending: THREE.AdditiveBlending,
+          transparent: true,
+          opacity: [0.15, 0.10, 0.06][f],
+          depthWrite: false,
+          color: new THREE.Color().setHSL(0.13, 1, [0.7, 0.5, 0.35][f]),
+        });
+        const flare = new THREE.Sprite(flareMat);
+        flare.scale.set(vRadius * [1.2, 1.8, 2.5][f], vRadius * [1.2, 1.8, 2.5][f], 1);
+        flare.visible = false;
+        scene.add(flare);
+        lensFlares.push(flare);
+      }
+      mesh.userData.lensFlares = lensFlares;
     }
 
   } else if (name === 'Earth') {
@@ -2558,6 +2577,18 @@ function animate() {
       const p3 = 1.0 + Math.sin(performance.now() * 0.0005 + 2.0) * 0.06;
       const baseW = (VISUAL_BODY_CONFIG.Sun.visualRadius || 0.22) * 8;
       wisp.scale.set(baseW * p3, baseW * p3, 1);
+    }
+    // Lens flare: position sprites between Sun and camera
+    if (sunMesh.userData.lensFlares) {
+      const flares = sunMesh.userData.lensFlares;
+      const sunPos = sunMesh.position;
+      const camDir = new THREE.Vector3().subVectors(camera.position, sunPos).normalize();
+      const offsets = [0.6, 1.2, 2.0];
+      for (let f = 0; f < flares.length; f++) {
+        flares[f].position.copy(sunPos).addScaledVector(camDir, offsets[f]);
+        flares[f].visible = true;
+        flares[f].material.opacity = [0.15, 0.10, 0.06][f] * (0.7 + Math.sin(performance.now() * 0.002 + f) * 0.3);
+      }
     }
   }
 
