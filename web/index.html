@@ -1703,11 +1703,35 @@ function createOrbitLine(name, index, currentState) {
   return line;
 }
 
-// Create orbit lines for planets (skip Sun, Moon)
+// Create orbit lines for planets (skip Sun; Moon gets a special Earth-centered orbit)
 for (let i = 0; i < BODY_NAMES.length; i++) {
   const name = BODY_NAMES[i];
   if (name === 'Sun') {
     planetOrbitLines[i] = null;
+    continue;
+  }
+  if (name === 'Moon') {
+    // Build a Moon orbit ring centered on Earth
+    const moonR = 0.00257; // ~384,400 km in AU
+    const segments = 128;
+    const moonPositions = new Float32Array(segments * 3);
+    for (let j = 0; j < segments; j++) {
+      const theta = (j / segments) * Math.PI * 2;
+      moonPositions[j*3] = moonR * Math.cos(theta);
+      moonPositions[j*3+1] = 0;
+      moonPositions[j*3+2] = moonR * Math.sin(theta);
+    }
+    const moonGeo = new THREE.BufferGeometry();
+    moonGeo.setAttribute('position', new THREE.BufferAttribute(moonPositions, 3));
+    const moonMat = new THREE.LineBasicMaterial({
+      color: new THREE.Color(COLOR.Moon),
+      transparent: true,
+      opacity: 0.30,
+      depthWrite: false,
+    });
+    const moonLine = new THREE.Line(moonGeo, moonMat);
+    scene.add(moonLine);
+    planetOrbitLines[i] = moonLine;
     continue;
   }
   const line = createOrbitLine(name, i);
@@ -2037,6 +2061,20 @@ function updateMeshes() {
     // Update directional light to follow the Sun
     if (name === 'Sun') {
       sunLight.position.set(x, y, z);
+    }
+
+    // Update orbit lines to follow the correct center
+    if (planetOrbitLines[i]) {
+      // Moon's orbit is centered on Earth; all other planet orbits are centered on Sun
+      if (name === 'Moon') {
+        const earthIdx = INDEX.Earth;
+        const ex = sim.pos[3*earthIdx], ey = sim.pos[3*earthIdx+1], ez = sim.pos[3*earthIdx+2];
+        planetOrbitLines[i].position.set(ex, ey, ez);
+      } else {
+        const sunIdx = INDEX.Sun;
+        const sx = sim.pos[3*sunIdx], sy = sim.pos[3*sunIdx+1], sz = sim.pos[3*sunIdx+2];
+        planetOrbitLines[i].position.set(sx, sy, sz);
+      }
     }
   }
 
