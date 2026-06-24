@@ -419,8 +419,32 @@
         <li class="muted">none yet — run forward in time</li>
       </ul>
     </div>
+
+    <div class="group">
+      <h2>Showcase Views</h2>
+      <div class="btn-row">
+        <button id="btn-preset-overview">🌐 Overview</button>
+        <button id="btn-preset-inner">🪨 Inner System</button>
+        <button id="btn-preset-earth">🌍 Earth</button>
+        <button id="btn-preset-jupiter">🟤 Jupiter</button>
+        <button id="btn-preset-saturn">🪐 Saturn</button>
+        <button id="btn-preset-asteroid">☄️ Asteroids</button>
+      </div>
+      <div class="btn-row">
+        <button id="btn-tour-start">🎬 Cinematic Tour</button>
+        <button id="btn-measure">📏 Measure</button>
+      </div>
+    </div>
   </div>
 </div>
+<div id="tour-bar" style="display:none; position:fixed; bottom:30px; left:50%; transform:translateX(-50%); background:rgba(10,12,18,0.92); border:1px solid rgba(100,120,200,0.4); border-radius:14px; padding:12px 24px; z-index:999; backdrop-filter:blur(12px); text-align:center; font-family:'Inter',system-ui;">
+  <div id="tour-caption" style="font-size:15px; color:#c8d6e5; margin-bottom:8px; letter-spacing:0.3px;"></div>
+  <button id="tour-prev" style="background:rgba(79,143,224,0.15);color:#c8d6e5;border:1px solid rgba(100,120,200,0.4);border-radius:8px;padding:6px 14px;cursor:pointer;font-size:13px;margin:0 4px;">⏮</button>
+  <button id="tour-pause" style="background:rgba(79,143,224,0.15);color:#c8d6e5;border:1px solid rgba(100,120,200,0.4);border-radius:8px;padding:6px 14px;cursor:pointer;font-size:13px;margin:0 4px;">⏸</button>
+  <button id="tour-next" style="background:rgba(79,143,224,0.15);color:#c8d6e5;border:1px solid rgba(100,120,200,0.4);border-radius:8px;padding:6px 14px;cursor:pointer;font-size:13px;margin:0 4px;">⏭</button>
+  <button id="tour-exit" style="background:rgba(255,95,95,0.2);color:#ff8a8a;border:1px solid rgba(255,95,95,0.4);border-radius:8px;padding:6px 14px;cursor:pointer;font-size:13px;margin:0 4px;">✕ Exit Tour</button>
+</div>
+
 
 <script type="importmap">
 {
@@ -673,6 +697,179 @@ controls.dampingFactor = 0.08;
 controls.minDistance = 0.5;
 controls.maxDistance = 200;
 controls.target.set(0, 0, 0);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CAMERA LERP TRANSITION
+// ═══════════════════════════════════════════════════════════════════════════
+
+let camLerpActive = false, camLerpFrom = new THREE.Vector3(), camLerpTo = new THREE.Vector3(), camLerpTarget = new THREE.Vector3(), camLerpT = 0, camLerpDuration = 1000, camLerpStart = 0;
+
+function cameraTransitionTo(pos, target, durationMs) {
+  camLerpActive = true;
+  camLerpFrom.copy(camera.position);
+  camLerpTo.copy(pos);
+  camLerpTarget.copy(target);
+  camLerpT = 0;
+  camLerpDuration = durationMs || 1000;
+  camLerpStart = performance.now();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TOUR MODE
+// ═══════════════════════════════════════════════════════════════════════════
+
+const tourStops = [
+  { body: 'Sun', caption: '\u2600\ufe0f The Sun \u2014 Our Star', duration: 4000, dist: 8 },
+  { body: 'Earth', caption: '\ud83c\udf0d Earth \u2014 Home', duration: 5000, dist: 2.5 },
+  { body: 'Mars', caption: '\ud83d\udd34 Mars \u2014 The Red Planet', duration: 4000, dist: 2 },
+  { body: 'Jupiter', caption: '\ud83d\udfe4 Jupiter \u2014 Gas Giant King', duration: 5000, dist: 4 },
+  { body: 'Saturn', caption: '\ud83e\ude90 Saturn \u2014 Rings of Wonder', duration: 5000, dist: 3 },
+  { body: 'Neptune', caption: '\ud83d\udd35 Neptune \u2014 Ice Giant Frontier', duration: 4000, dist: 3 },
+];
+
+let tourActive = false, tourIndex = 0, tourTimer = null, tourPaused = false;
+
+function startTour() {
+  tourActive = true; tourIndex = 0; tourPaused = false;
+  document.getElementById('tour-bar').style.display = 'block';
+  document.getElementById('tour-pause').textContent = '\u23f8';
+  showTourStop();
+}
+
+function showTourStop() {
+  if (tourIndex >= tourStops.length) { endTour(); return; }
+  const stop = tourStops[tourIndex];
+  const idx = BODY_NAMES.indexOf(stop.body);
+  if (idx < 0) { tourIndex++; showTourStop(); return; }
+  
+  // Set focus (option values are numeric: 0=Sun, 1=Mercury, etc.)
+  document.getElementById('focus-select').value = String(idx);
+  document.getElementById('focus-select').dispatchEvent(new Event('change'));
+  
+  // Set camera distance
+  const mesh = planetMeshes[idx];
+  if (mesh) {
+    const dir = camera.position.clone().sub(controls.target).normalize();
+    const targetPos = mesh.position.clone().add(dir.multiplyScalar(stop.dist));
+    cameraTransitionTo(targetPos, mesh.position.clone(), 1500);
+  }
+  
+  // Caption
+  const caption = document.getElementById('tour-caption');
+  caption.style.opacity = '0';
+  caption.textContent = stop.caption;
+  caption.style.transition = 'opacity 0.5s';
+  setTimeout(() => caption.style.opacity = '1', 100);
+  
+  // Auto-advance
+  clearTimeout(tourTimer);
+  if (!tourPaused) {
+    tourTimer = setTimeout(() => { tourIndex++; showTourStop(); }, stop.duration);
+  }
+}
+
+function endTour() {
+  tourActive = false;
+  clearTimeout(tourTimer);
+  document.getElementById('tour-bar').style.display = 'none';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SHOWCASE PRESETS
+// ═══════════════════════════════════════════════════════════════════════════
+
+const presets = {
+  overview: { pos: [0, 40, 0], target: [0,0,0] },
+  inner: { pos: [0, 5, 3], target: [0,0,0] },
+  earth: { pos: [0.3, 0.3, 0.8], target: [0.3, 0, 0] },
+  jupiter: { pos: [5.2, 2, 3], target: [5.2, 0, 0] },
+  saturn: { pos: [9.5, 2, 3], target: [9.5, 0, 0] },
+  asteroid: { pos: [0, 8, 0], target: [2.75, 0, 0] },
+};
+
+function applyPreset(name) {
+  const p = presets[name];
+  if (!p) return;
+  cameraTransitionTo(new THREE.Vector3(...p.pos), new THREE.Vector3(...p.target), 2000);
+  focusSelect.value = '-1';
+  focusSelect.dispatchEvent(new Event('change'));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MEASUREMENT TOOL
+// ═══════════════════════════════════════════════════════════════════════════
+
+let measureMode = false, measureBodies = [], measureLine = null, measureLabel = null;
+
+function setMeasureMode(on) {
+  measureMode = on;
+  measureBodies = [];
+  if (measureLine) { scene.remove(measureLine); measureLine.geometry.dispose(); measureLine.material.dispose(); measureLine = null; }
+  if (measureLabel) { scene.remove(measureLabel); measureLabel.material.dispose(); measureLabel = null; }
+  const btn = document.getElementById('btn-measure');
+  if (btn) btn.classList.toggle('active', on);
+  renderer.domElement.style.cursor = on ? 'crosshair' : 'default';
+}
+
+function onMeasureClick(idx) {
+  if (!measureMode) return false;
+  measureBodies.push(idx);
+  if (measureBodies.length === 1) {
+    return true;
+  }
+  if (measureBodies.length >= 2) {
+    const i0 = measureBodies[0], i1 = measureBodies[1];
+    const p0 = new THREE.Vector3(sim.pos[3*i0], sim.pos[3*i0+1], sim.pos[3*i0+2]);
+    const p1 = new THREE.Vector3(sim.pos[3*i1], sim.pos[3*i1+1], sim.pos[3*i1+2]);
+    const dist = p0.distanceTo(p1);
+    const distKm = dist * KM_PER_AU;
+
+    // Draw line
+    const geo = new THREE.BufferGeometry().setFromPoints([p0, p1]);
+    const mat = new THREE.LineBasicMaterial({ color: 0xff5f5f, transparent: true, opacity: 0.8 });
+    measureLine = new THREE.Line(geo, mat);
+    scene.add(measureLine);
+
+    // Label
+    let distStr;
+    if (distKm > 1e6) distStr = (distKm / 1e6).toFixed(2) + ' M km';
+    else if (distKm > 1000) distStr = (distKm / 1000).toFixed(1) + ' thousand km';
+    else distStr = distKm.toFixed(0) + ' km';
+    const mid = p0.clone().add(p1).multiplyScalar(0.5);
+    measureLabel = makeLabelSprite(BODY_NAMES[i0] + ' \u2194 ' + BODY_NAMES[i1] + ': ' + distStr, '#ff5f5f');
+    measureLabel.scale.set(1.0, 0.25, 1);
+    measureLabel.position.copy(mid);
+    scene.add(measureLabel);
+
+    measureBodies = [];
+    return true;
+  }
+  return false;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TOUR + PRESET + MEASURE BUTTON LISTENERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+document.getElementById('tour-prev')?.addEventListener('click', () => { clearTimeout(tourTimer); if (tourIndex > 0) { tourIndex--; showTourStop(); } });
+document.getElementById('tour-next')?.addEventListener('click', () => { clearTimeout(tourTimer); tourIndex++; showTourStop(); });
+document.getElementById('tour-pause')?.addEventListener('click', () => {
+  tourPaused = !tourPaused;
+  document.getElementById('tour-pause').textContent = tourPaused ? '\u25b6' : '\u23f8';
+  if (!tourPaused) { clearTimeout(tourTimer); tourTimer = setTimeout(() => { tourIndex++; showTourStop(); }, 5000); } else { clearTimeout(tourTimer); }
+});
+document.getElementById('tour-exit')?.addEventListener('click', endTour);
+document.getElementById('btn-tour-start')?.addEventListener('click', startTour);
+
+document.getElementById('btn-preset-overview')?.addEventListener('click', () => applyPreset('overview'));
+document.getElementById('btn-preset-inner')?.addEventListener('click', () => applyPreset('inner'));
+document.getElementById('btn-preset-earth')?.addEventListener('click', () => applyPreset('earth'));
+document.getElementById('btn-preset-jupiter')?.addEventListener('click', () => applyPreset('jupiter'));
+document.getElementById('btn-preset-saturn')?.addEventListener('click', () => applyPreset('saturn'));
+document.getElementById('btn-preset-asteroid')?.addEventListener('click', () => applyPreset('asteroid'));
+
+document.getElementById('btn-measure')?.addEventListener('click', () => { setMeasureMode(!measureMode); });
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // LIGHTING
@@ -1309,6 +1506,8 @@ function resetSim() {
 // UPDATE THREE.JS MESHES FROM SIMULATION
 // ═══════════════════════════════════════════════════════════════════════════
 
+const _tempVec3 = new THREE.Vector3(); // preallocated for hot loops
+
 function updateMeshes() {
   const pos = sim.pos;
   const camTarget = controls.target;
@@ -1358,7 +1557,8 @@ function updateMeshes() {
 
     // Update labels (scale with camera distance)
     if (planetLabels[i]) {
-      const _d = camera.position.distanceTo(new THREE.Vector3(x, y, z));
+      _tempVec3.set(x, y, z);
+      const _d = camera.position.distanceTo(_tempVec3);
       const _bs = VISUAL_RADIUS_SCALE[name] * 1.0;
       const _s = Math.max(_bs * 0.5, Math.min(_bs * 2, _d * 0.03));
       planetLabels[i].position.set(x, y + VISUAL_RADIUS_SCALE[name] * 0.8, z);
@@ -1578,6 +1778,7 @@ renderer.domElement.addEventListener('click', (event) => {
     const obj = intersects[0].object;
     const idx = obj.userData.bodyIndex;
     if (idx >= 0) {
+      if (measureMode) { onMeasureClick(idx); return; }
       showInfoPanel(idx);
       return;
     }
@@ -1798,6 +1999,25 @@ function animate() {
     }
   } else if (followRing) {
     followRing.visible = false;
+  }
+
+
+  // Camera lerp transition
+  if (camLerpActive) {
+    const elapsed = performance.now() - camLerpStart;
+    let t = Math.min(1, elapsed / camLerpDuration);
+    t = t * t * (3 - 2 * t); // smoothstep easing
+    camera.position.lerpVectors(camLerpFrom, camLerpTo, t);
+    controls.target.lerp(camLerpTarget, 0.05);
+    controls.update();
+    if (t >= 1) camLerpActive = false;
+  }
+
+  // Sun glow pulsing
+  if (planetMeshes[INDEX.Sun] && planetMeshes[INDEX.Sun].userData.glow) {
+    const glow = planetMeshes[INDEX.Sun].userData.glow;
+    glow.material.opacity = 0.15 + 0.05 * Math.sin(performance.now() * 0.002);
+    glow.scale.setScalar(VISUAL_RADIUS_SCALE.Sun * 6 + 0.5 * Math.sin(performance.now() * 0.001));
   }
 
   controls.update();
@@ -2123,19 +2343,25 @@ document.addEventListener('keydown', (e) => {
   switch(e.key) {
     case ' ':
       e.preventDefault();
-      sim.paused = !sim.paused;
-      playBtn.textContent = sim.paused ? '▶ Play' : '⏸ Pause';
+      running = !running;
+      playBtn.textContent = running ? '❚❚ Pause' : '▶ Play';
       break;
-    case '+': case '=':
-      speedSlider.value = Math.min(100, Number(speedSlider.value) + 1);
-      speedSlider.dispatchEvent(new Event('input'));
-      break;
-    case '-': case '_':
-      speedSlider.value = Math.max(0, Number(speedSlider.value) - 1);
-      speedSlider.dispatchEvent(new Event('input'));
-      break;
+    case '+': case '=': {
+      const _sl = document.getElementById('speed');
+      if (_sl) { _sl.value = Math.min(100, Number(_sl.value) + 1); _sl.dispatchEvent(new Event('input')); }
+      break; }
+    case '-': case '_': {
+      const _sl = document.getElementById('speed');
+      if (_sl) { _sl.value = Math.max(0, Number(_sl.value) - 1); _sl.dispatchEvent(new Event('input')); }
+      break; }
     case 'r': case 'R':
       document.getElementById('btn-reset').click();
+      break;
+    case 't': case 'T':
+      if (!tourActive) startTour(); else endTour();
+      break;
+    case 'm': case 'M':
+      setMeasureMode(!measureMode);
       break;
     case 'Escape':
       focusSelect.value = '-1';
