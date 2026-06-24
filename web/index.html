@@ -1227,8 +1227,46 @@ fillLight.position.set(-10, 10, -10);
 scene.add(fillLight);
 
 // ═══════════════════════════════════════════════════════════════════════════
-// STARFIELD
 // ═══════════════════════════════════════════════════════════════════════════
+// STARFIELD — HDRI-like procedural starfield
+// ═══════════════════════════════════════════════════════════════════════════
+
+function makeStarfieldTexture() {
+  const c = document.createElement('canvas');
+  c.width = 2048; c.height = 1024;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#000005';
+  ctx.fillRect(0, 0, 2048, 1024);
+  const count = 8000;
+  for (let i = 0; i < count; i++) {
+    const x = Math.random() * 2048;
+    let y = Math.random() * 1024;
+    // Milky way band: bias stars toward center horizontal band
+    const bandCenter = 512 + Math.sin(x / 2048 * Math.PI * 4) * 100;
+    if (Math.random() < 0.3) y = bandCenter + (Math.random() - 0.5) * 200;
+    const distFromBand = Math.abs(y - 512) / 512;
+    const brightness = 0.3 + Math.random() * 0.7 * (1 - distFromBand * 0.5);
+    if (Math.random() < 0.02) {
+      // Occasional bright star
+      const hue = Math.random() < 0.3 ? 220 : (Math.random() < 0.2 ? 45 : 0);
+      const sat = hue > 0 ? 0.3 : 0;
+      ctx.fillStyle = `hsla(${hue}, ${sat * 100}%, 90%, ${0.6 + Math.random() * 0.4})`;
+      ctx.beginPath(); ctx.arc(x, y, 1 + Math.random() * 1.5, 0, Math.PI * 2); ctx.fill();
+    } else if (Math.random() < brightness) {
+      ctx.fillStyle = `rgba(200,210,255,${0.15 + Math.random() * brightness * 0.7})`;
+      ctx.fillRect(x, y, 0.5 + Math.random() * 1, 0.5 + Math.random() * 1);
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+const starfieldTex = makeStarfieldTexture();
+const starfieldGeo = new THREE.SphereGeometry(400, 64, 64);
+const starfieldMat = new THREE.MeshBasicMaterial({ map: starfieldTex, side: THREE.BackSide });
+const starfield = new THREE.Mesh(starfieldGeo, starfieldMat);
+scene.add(starfield);
 
 const starGeo = new THREE.BufferGeometry();
 const starCount = 5000;
@@ -1251,7 +1289,7 @@ const starMat = new THREE.PointsMaterial({
   size: 0.5,
   sizeAttenuation: true,
   transparent: true,
-  opacity: 0.8,
+  opacity: 0.35,
 });
 const stars = new THREE.Points(starGeo, starMat);
 scene.add(stars);
