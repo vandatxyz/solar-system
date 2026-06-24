@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <link rel="icon" href="data:,">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Solar System Simulator — Three.js</title>
@@ -2515,8 +2516,6 @@ function animate() {
       const p3 = 1.0 + Math.sin(performance.now() * 0.0005 + 2.0) * 0.06;
       const baseW = (VISUAL_BODY_CONFIG.Sun.visualRadius || 0.22) * 8;
       wisp.scale.set(baseW * p3, baseW * p3, 1);
-      glow.material.opacity = 0.15 + 0.05 * Math.sin(performance.now() * 0.002);
-      glow.scale.setScalar(VISUAL_RADIUS_SCALE.Sun * 6 + 0.5 * Math.sin(performance.now() * 0.001));
     }
   }
 
