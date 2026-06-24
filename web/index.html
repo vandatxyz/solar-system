@@ -2499,19 +2499,22 @@ function animate() {
       const glow = sunMesh.userData.glow;
       // Pulse the glow
       const pulse = 1.0 + Math.sin(performance.now() * 0.001) * 0.05;
-      const baseScale = (VISUAL_BODY_CONFIG.Sun.visualRadius || 0.18) * 5;
+      const baseScale = (VISUAL_BODY_CONFIG.Sun.visualRadius || 0.22) * 5;
       glow.scale.set(baseScale * pulse, baseScale * pulse, 1);
     }
     if (sunMesh.userData.corona) {
       const corona = sunMesh.userData.corona;
       const p2 = 1.0 + Math.sin(performance.now() * 0.0007 + 1.0) * 0.08;
-      const baseC = (VISUAL_BODY_CONFIG.Sun.visualRadius || 0.18) * 10;
+      const baseC = (VISUAL_BODY_CONFIG.Sun.visualRadius || 0.22) * 10;
       corona.scale.set(baseC * p2, baseC * p2, 1);
       corona.material.opacity = 0.2 + Math.sin(performance.now() * 0.001) * 0.05;
     }
     if (sunMesh.userData.coronaWisp) {
       const wisp = sunMesh.userData.coronaWisp;
-      wisp.rotation = performance.now() * 0.00005;
+      wisp.material.rotation = performance.now() * 0.00005;
+      const p3 = 1.0 + Math.sin(performance.now() * 0.0005 + 2.0) * 0.06;
+      const baseW = (VISUAL_BODY_CONFIG.Sun.visualRadius || 0.22) * 8;
+      wisp.scale.set(baseW * p3, baseW * p3, 1);
       glow.material.opacity = 0.15 + 0.05 * Math.sin(performance.now() * 0.002);
       glow.scale.setScalar(VISUAL_RADIUS_SCALE.Sun * 6 + 0.5 * Math.sin(performance.now() * 0.001));
     }
