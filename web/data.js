@@ -51,8 +51,7 @@ export const RADIUS_KM = {
   Neptune: 24_622.0,
 };
 
-// Display colours (purely cosmetic).
-const COLOR = {
+export const COLOR = {
   Sun:     "#ffcc33",
   Mercury: "#b9b6ad",
   Venus:   "#e8c98a",
@@ -63,6 +62,12 @@ const COLOR = {
   Saturn:  "#e3d29a",
   Uranus:  "#9fd8e0",
   Neptune: "#6f8fe0",
+};
+
+export const MASS_KG = {
+  Sun: 1.989e30, Mercury: 3.301e23, Venus: 4.867e24, Earth: 5.972e24,
+  Moon: 7.342e22, Mars: 6.417e23, Jupiter: 1.898e27, Saturn: 5.683e26,
+  Uranus: 8.681e25, Neptune: 1.024e26,
 };
 
 // Canonical ordering -- state arrays follow this order everywhere.

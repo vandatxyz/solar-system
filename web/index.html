@@ -477,7 +477,7 @@ function showErrorContainer() {
 window.addEventListener('load', () => {
   setTimeout(() => {
     if (!__solarSysLoaded) showErrorContainer();
-  }, 12000);
+  }, 5000);
 });
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -492,13 +492,27 @@ document.addEventListener('DOMContentLoaded', () => {
 // Solar System Simulator — Three.js Renderer
 // ═══════════════════════════════════════════════════════════════════════════
 import * as THREE from 'three';
+import { NBody, removeBarycentreDrift } from './physics.js';
+import { EclipseFinder, currentAlignment } from './eclipse.js';
+import {
+  KM_PER_AU,
+  J2000_JD,
+  BODIES,
+  INDEX,
+  BODY_NAMES,
+  GM,
+  J2000_STATE,
+  RADIUS_KM,
+  COLOR,
+  MASS_KG
+} from './data.js';
+
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 // ═══════════════════════════════════════════════════════════════════════════
-// CONFIG-DRIVEN VISUAL BODY PROPERTIES
-// ═══════════════════════════════════════════════════════════════════════════
+const VISUAL_MOON_SCALE = 50.0;
 
 const VISUAL_BODY_CONFIG = {
   Sun: {
@@ -799,56 +813,6 @@ function getConfigTex(name, suffix) {
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
-// DATA (from data.js)
-// ═══════════════════════════════════════════════════════════════════════════
-
-const KM_PER_AU = 149_597_870.7;
-const SEC_PER_DAY = 86_400.0;
-const GM_KM3S2_TO_AU3D2 = Math.pow(1.0 / KM_PER_AU, 3) * SEC_PER_DAY * SEC_PER_DAY;
-const J2000_JD = 2_451_545.0;
-
-const GM_KM3S2 = {
-  Sun:1.32712440018e11, Mercury:2.2031868551e4, Venus:3.24858592000e5,
-  Earth:3.98600435507e5, Moon:4.90028001184e3, Mars:4.282837362e4,
-  Jupiter:1.26686531900e8, Saturn:3.79311879180e7, Uranus:5.793951256e6,
-  Neptune:6.835099502e6,
-};
-
-const RADIUS_KM = {
-  Sun:696000, Mercury:2439.7, Venus:6051.8, Earth:6371.0084, Moon:1737.4,
-  Mars:3389.5, Jupiter:69911, Saturn:58232, Uranus:25362, Neptune:24622,
-};
-
-const MASS_KG = {
-  Sun: 1.989e30, Mercury: 3.301e23, Venus: 4.867e24, Earth: 5.972e24,
-  Moon: 7.342e22, Mars: 6.417e23, Jupiter: 1.898e27, Saturn: 5.683e26,
-  Uranus: 8.681e25, Neptune: 1.024e26,
-};
-
-const COLOR = {
-  Sun:"#ffcc33", Mercury:"#b9b6ad", Venus:"#e8c98a", Earth:"#4f8fe0",
-  Moon:"#cfcfcf", Mars:"#d9603b", Jupiter:"#d8a86b", Saturn:"#e3d29a",
-  Uranus:"#9fd8e0", Neptune:"#6f8fe0",
-};
-
-const BODY_NAMES = ["Sun","Mercury","Venus","Earth","Moon","Mars","Jupiter","Saturn","Uranus","Neptune"];
-const INDEX = Object.fromEntries(BODY_NAMES.map((n,i)=>[n,i]));
-
-const BODIES = BODY_NAMES.map(name=>({name, gm:GM_KM3S2[name]*GM_KM3S2_TO_AU3D2, radiusKm:RADIUS_KM[name], radiusAu:RADIUS_KM[name]/KM_PER_AU, color:COLOR[name]}));
-const GM = BODIES.map(b=>b.gm);
-
-const J2000_STATE = {
-  Sun:{pos:[-0.007137179161607904,-0.002795997495567612,0.0002062985061910257],vel:[5.378460339618783e-06,-7.406916207973516e-06,-9.43429343213747e-08]},
-  Mercury:{pos:[-0.1372307845370601,-0.450083615630924,-0.02439200845186075],vel:[0.02137177412835578,-0.006455396660044872,-0.002487957757771483]},
-  Venus:{pos:[-0.725439475506997,-0.03545030569537367,0.04122048053303724],vel:[0.0008034959761149407,-0.02030262561844178,-0.0003235458586621571]},
-  Earth:{pos:[-0.1842722784343177,0.964445689270963,0.0002022132246085051],vel:[-0.01720224660838933,-0.003166189060532839,1.064592514002072e-08]},
-  Moon:{pos:[-0.1862215600840044,0.9626075632308897,0.000444671198490556],vel:[-0.01683057613107253,-0.003588367637063646,-6.634893538849906e-06]},
-  Mars:{pos:[1.383578742584744,-0.01621231564658005,-0.03426136426962697],vel:[0.0006768779624069969,0.0151798411782796,0.0003015574290837992]},
-  Jupiter:{pos:[3.994040256427818,2.935779784974931,-0.101578984945624],vel:[-0.004562948121087195,0.006435847855854325,7.548691257292337e-05]},
-  Saturn:{pos:[6.399273249217048,6.567192454614989,-0.3688696745701767],vel:[-0.004286506154280534,0.003883395100744251,0.0001025581110922691]},
-  Uranus:{pos:[14.42471809676244,-13.73711939965492,-0.2379354688209131],vel:[0.002683627208509772,0.002665254700749824,-2.488379610328529e-05]},
-  Neptune:{pos:[16.8049100760519,-24.99455905985419,0.1274288139389692],vel:[0.002584290670584903,0.001769120292270417,-9.611096855010698e-05]},
-};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // BONUS FEATURES DATA
@@ -893,101 +857,6 @@ const dwarfLabels = [];
 let asteroidBelt = null;
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PHYSICS (from physics.js)
-// ═══════════════════════════════════════════════════════════════════════════
-
-class NBody {
-  constructor(pos,vel,gm,dt) {
-    this.n=gm.length; this.pos=Float64Array.from(pos); this.vel=Float64Array.from(vel);
-    this.gm=Float64Array.from(gm); this.dt=dt; this.time=0;
-    this.acc=new Float64Array(3*this.n); this._computeAcc();
-  }
-  _computeAcc(){
-    const {n,pos,gm,acc}=this; acc.fill(0);
-    for(let i=0;i<n;i++){
-      const ix=3*i,iy=ix+1,iz=ix+2; const xi=pos[ix],yi=pos[iy],zi=pos[iz];
-      let axi=0,ayi=0,azi=0;
-      for(let j=0;j<n;j++){if(j===i)continue; const jx=3*j;
-        const dx=pos[jx]-xi,dy=pos[jx+1]-yi,dz=pos[jx+2]-zi;
-        const r2=dx*dx+dy*dy+dz*dz; const invR3=gm[j]/(r2*Math.sqrt(r2));
-        axi+=dx*invR3; ayi+=dy*invR3; azi+=dz*invR3;
-      } acc[ix]=axi; acc[iy]=ayi; acc[iz]=azi;
-    }
-  }
-  step(){
-    const{pos,vel,acc,dt}=this; const h=dt,half=0.5*dt; const m=pos.length;
-    for(let k=0;k<m;k++){vel[k]+=half*acc[k]; pos[k]+=h*vel[k];}
-    this._computeAcc();
-    for(let k=0;k<m;k++){vel[k]+=half*acc[k];}
-    this.time+=h;
-  }
-  run(n,cb){for(let i=0;i<n;i++){this.step();if(cb)cb(this);}}
-  energy(){const{n,pos,vel,gm}=this;let k=0;for(let i=0;i<n;i++){const j=3*i;k+=0.5*gm[i]*(vel[j]*vel[j]+vel[j+1]*vel[j+1]+vel[j+2]*vel[j+2]);}let p=0;for(let i=0;i<n;i++){const ix=3*i;for(let j=i+1;j<n;j++){const jx=3*j,dx=pos[ix]-pos[jx],dy=pos[ix+1]-pos[jx+1],dz=pos[ix+2]-pos[jx+2];p-=gm[i]*gm[j]/Math.sqrt(dx*dx+dy*dy+dz*dz);}}return k+p;}
-  angularMomentum(){const{n,pos,vel,gm}=this;let lx=0,ly=0,lz=0;for(let i=0;i<n;i++){const k=3*i,x=pos[k],y=pos[k+1],z=pos[k+2],vx=vel[k],vy=vel[k+1],vz=vel[k+2];lx+=gm[i]*(y*vz-z*vy);ly+=gm[i]*(z*vx-x*vz);lz+=gm[i]*(x*vy-y*vx);}return[lx,ly,lz];}
-}
-
-function removeBarycentreDrift(pos,vel,gm){
-  const n=gm.length; let tg=0; const com=[0,0,0],vcom=[0,0,0];
-  for(let i=0;i<n;i++){tg+=gm[i];const k=3*i;for(let d=0;d<3;d++){com[d]+=gm[i]*pos[k+d];vcom[d]+=gm[i]*vel[k+d];}}
-  for(let d=0;d<3;d++){com[d]/=tg;vcom[d]/=tg;}
-  for(let i=0;i<n;i++){const k=3*i;for(let d=0;d<3;d++){pos[k+d]-=com[d];vel[k+d]-=vcom[d];}}
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// ECLIPSE (from eclipse.js)
-// ═══════════════════════════════════════════════════════════════════════════
-
-const _RS=RADIUS_KM.Sun/KM_PER_AU,_RM=RADIUS_KM.Moon/KM_PER_AU,_RE=RADIUS_KM.Earth/KM_PER_AU;
-const _IS=INDEX.Sun,_IE=INDEX.Earth,_IM=INDEX.Moon;
-
-function vf(pos,a,b,out){const ka=3*a,kb=3*b;out[0]=pos[ka]-pos[kb];out[1]=pos[ka+1]-pos[kb+1];out[2]=pos[ka+2]-pos[kb+2];return out;}
-function nrm(v){return Math.hypot(v[0],v[1],v[2]);}
-function angSep(s,m){const d=s[0]*m[0]+s[1]*m[1]+s[2]*m[2];return Math.acos(Math.min(1,Math.max(-1,d/(nrm(s)*nrm(m)))));}
-function classify(s,m,sep){
-  const dS=nrm(s),dM=nrm(m),aS=Math.asin(_RS/dS),aM=Math.asin(_RM/dM),aP=Math.asin(_RE/dM);
-  if(sep>aS+aM+aP)return{kind:'none',mag:0};
-  const aSS=Math.asin(_RS/(dS-_RE)),aMS=Math.asin(_RM/(dM-_RE)),co=sep<aS+aM;
-  let kind;if(co&&aMS>=aSS)kind='total';else if(co)kind='annular';else kind='partial';
-  const ss=Math.max(sep-aP,0);let mag=(aSS+aMS-ss)/(2*aSS);mag=Math.min(2,Math.max(0,mag));
-  return{kind,magnitude:mag};
-}
-const _R2D=180/Math.PI;
-
-function jdToCalendar(jd){
-  const ja=jd+0.5,z=Math.floor(ja),f=ja-z;let a;
-  if(z<2299161)a=z;else{const alpha=Math.floor((z-1867216.25)/36524.25);a=z+1+alpha-Math.floor(alpha/4);}
-  const b=a+1524,c=Math.floor((b-122.1)/365.25),d=Math.floor(365.25*c),e=Math.floor((b-d)/30.6001);
-  const day=b-d-Math.floor(30.6001*e),month=e<14?e-1:e-13,year=month>2?c-4716:c-4715;
-  let hrs=f*24,hh=Math.floor(hrs),mm=Math.round((hrs-hh)*60);if(mm===60){mm=0;hh+=1;}
-  const p=(x,w=2)=>String(x).padStart(w,'0');
-  return `${p(year,4)}-${p(month)}-${p(day)} ${p(hh)}:${p(mm)}`;
-}
-
-class EclipseFinder{
-  constructor(j0=J2000_JD,onEv=null){this.jd0=j0;this.onEvent=onEv;this.events=[];this._hist=[];this._s=new Float64Array(3);this._m=new Float64Array(3);}
-  feed(integ){
-    const s=vf(integ.pos,_IS,_IE,this._s),m=vf(integ.pos,_IM,_IE,this._m);
-    const sep=angSep(s,m);this._hist.push({t:integ.time,sep,s:Float64Array.from(s),m:Float64Array.from(m)});
-    if(this._hist.length>3)this._hist.shift();if(this._hist.length===3)this._checkMin();
-  }
-  _checkMin(){
-    const[a,b,c]=this._hist,f0=a.sep,f1=b.sep,f2=c.sep;
-    if(!(f1<f0&&f1<f2))return;const den=f0-2*f1+f2;if(den<=0)return;
-    const d=0.5*(f0-f2)/den;let sm=f1-0.25*(f0-f2)*d;sm=Math.max(sm,0);
-    const{kind,magnitude}=classify(b.s,b.m,sm);if(kind==='none')return;
-    // Use absolute time span so JD is correct in both forward and reverse
-    const h=Math.abs(b.t-a.t);
-    const tMid=Math.min(a.t,b.t)+d*h;const jd=this.jd0+tMid;
-    const ev={jd,calendar:jdToCalendar(jd),kind,separationDeg:sm*_R2D,magnitude};
-    this.events.push(ev);if(this.onEvent)this.onEvent(ev);
-  }
-}
-
-function currentAlignment(pos){
-  const s=vf(pos,_IS,_IE,new Float64Array(3)),m=vf(pos,_IM,_IE,new Float64Array(3));
-  const sep=angSep(s,m);const{kind,magnitude}=classify(s,m,sep);
-  return{separationDeg:sep*_R2D,kind,magnitude};
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // THREE.JS SCENE SETUP
@@ -1723,26 +1592,24 @@ function addPlanetToScene(name, index) {
     const ringGeo = new THREE.RingGeometry(innerR, outerR, 64);
     let ringMat;
     if (ringTex) {
-      ringMat = new THREE.MeshStandardMaterial({
+      ringMat = new THREE.MeshPhongMaterial({
         map: ringTex,
         side: THREE.DoubleSide,
         transparent: true,
         opacity: 0.8,
         depthWrite: false,
-        roughness: 0.7,
-        metalness: 0.1,
+        shininess: 15,
       });
     } else {
       // Procedural fallback with Cassini division
       const fallbackTex = makeSaturnRingTexture();
-      ringMat = new THREE.MeshStandardMaterial({
+      ringMat = new THREE.MeshPhongMaterial({
         map: fallbackTex,
         side: THREE.DoubleSide,
         transparent: true,
         opacity: 0.7,
         depthWrite: false,
-        roughness: 0.7,
-        metalness: 0.1,
+        shininess: 15,
       });
     }
     const ring = new THREE.Mesh(ringGeo, ringMat);
@@ -1780,66 +1647,123 @@ for (let i = 0; i < BODY_NAMES.length; i++) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function createOrbitLine(name, index, currentState) {
-  // Generate orbit by sampling an ellipse in the orbital plane.
-  if (name === 'Sun' || name === 'Moon') return null;
+  if (name === 'Sun') return null;
 
-  const s = currentState || J2000_STATE[name];
-  const r = Math.sqrt(s.pos[0]*s.pos[0] + s.pos[1]*s.pos[1] + s.pos[2]*s.pos[2]);
-  if (r < 0.01) return null;
+  let px, py, pz, vx, vy, vz;
+  let mu;
+  let visualScale = 1.0;
 
-  const px = s.pos[0], py = s.pos[1], pz = s.pos[2];
-  const vx = s.vel[0], vy = s.vel[1], vz = s.vel[2];
+  if (name === 'Moon') {
+    visualScale = VISUAL_MOON_SCALE;
+    const earthIdx = INDEX.Earth;
+    mu = BODIES[earthIdx].gm;
+    if (currentState) {
+      px = currentState.pos[0] - currentState.earthPos[0];
+      py = currentState.pos[1] - currentState.earthPos[1];
+      pz = currentState.pos[2] - currentState.earthPos[2];
+      vx = currentState.vel[0] - currentState.earthVel[0];
+      vy = currentState.vel[1] - currentState.earthVel[1];
+      vz = currentState.vel[2] - currentState.earthVel[2];
+    } else {
+      const ms = J2000_STATE.Moon;
+      const es = J2000_STATE.Earth;
+      px = ms.pos[0] - es.pos[0];
+      py = ms.pos[1] - es.pos[1];
+      pz = ms.pos[2] - es.pos[2];
+      vx = ms.vel[0] - es.vel[0];
+      vy = ms.vel[1] - es.vel[1];
+      vz = ms.vel[2] - es.vel[2];
+    }
+  } else {
+    mu = BODIES[0].gm; // Sun
+    const s = currentState || J2000_STATE[name];
+    px = s.pos[0];
+    py = s.pos[1];
+    pz = s.pos[2];
+    vx = s.vel[0];
+    vy = s.vel[1];
+    vz = s.vel[2];
+  }
+
+  const r = Math.sqrt(px*px + py*py + pz*pz);
+  if (r < 1e-6) return null;
+
   const nx = py*vz - pz*vy;
   const ny = pz*vx - px*vz;
   const nz = px*vy - py*vx;
   const nLen = Math.sqrt(nx*nx + ny*ny + nz*nz);
-  if (nLen < 1e-10) return null;
+  if (nLen < 1e-12) return null;
+
+  const v2 = vx*vx + vy*vy + vz*vz;
+  const rdotv = px*vx + py*vy + pz*vz;
+  const epsilon = v2 / 2 - mu / r;
 
   const segments = 128;
   const positions = new Float32Array(segments * 3);
 
-  const e1x = px / r, e1y = py / r, e1z = pz / r;
-  const e2x = ny/r - nz*e1y;
-  const e2y = nz/r - nx*e1z;
-  const e2z = nx/r - ny*e1x;
-  const e2Len = Math.sqrt(e2x*e2x + e2y*e2y + e2z*e2z);
-  const e2xn = e2x / e2Len, e2yn = e2y / e2Len, e2zn = e2z / e2Len;
+  if (epsilon < 0) {
+    const a = -mu / (2 * epsilon);
+    const h = nLen;
+    const b = h * Math.sqrt(a / mu);
+    
+    const ex = ((v2 - mu / r) * px - rdotv * vx) / mu;
+    const ey = ((v2 - mu / r) * py - rdotv * vy) / mu;
+    const ez = ((v2 - mu / r) * pz - rdotv * vz) / mu;
+    const e = Math.sqrt(ex*ex + ey*ey + ez*ez);
 
-  // Known orbital parameters (eccentricity, semi-major axis in AU)
-  const ORBITAL_PARAMS = {
-    Mercury: { ecc: 0.2056, a: 0.387 },
-    Venus:   { ecc: 0.0068, a: 0.723 },
-    Earth:   { ecc: 0.0167, a: 1.000 },
-    Mars:    { ecc: 0.0934, a: 1.524 },
-    Jupiter: { ecc: 0.0484, a: 5.203 },
-    Saturn:  { ecc: 0.0539, a: 9.537 },
-    Uranus:  { ecc: 0.0473, a: 19.19 },
-    Neptune: { ecc: 0.0086, a: 30.07 },
-  };
-  const op = ORBITAL_PARAMS[name] || {};
-  const semiMajorAxis = op.a || r;
-  const eccentricity = op.ecc ?? 0;
-  const semiMinorAxis = semiMajorAxis * Math.sqrt(Math.max(0, 1 - eccentricity * eccentricity));
-  const focusOffset = semiMajorAxis * eccentricity;
+    let e1x, e1y, e1z;
+    if (e < 1e-6) {
+      e1x = px / r;
+      e1y = py / r;
+      e1z = pz / r;
+    } else {
+      e1x = ex / e;
+      e1y = ey / e;
+      e1z = ez / e;
+    }
 
-  for (let j = 0; j < segments; j++) {
-    const theta = (j / segments) * Math.PI * 2;
-    const c = Math.cos(theta), s2 = Math.sin(theta);
-    const x = semiMajorAxis * c - focusOffset;
-    const y = semiMinorAxis * s2;
-    positions[j*3] = x * e1x + y * e2xn;
-    positions[j*3+1] = x * e1y + y * e2yn;
-    positions[j*3+2] = x * e1z + y * e2zn;
+    // e2 = h_hat x e1
+    const e2x = (ny * e1z - nz * e1y) / h;
+    const e2y = (nz * e1x - nx * e1z) / h;
+    const e2z = (hx * e1y - ny * e1x) / h;
+
+    const cf = a * e;
+
+    for (let j = 0; j < segments; j++) {
+      const theta = (j / segments) * Math.PI * 2;
+      const c_val = Math.cos(theta), s_val = Math.sin(theta);
+      const lx = (a * c_val - cf) * visualScale;
+      const ly = (b * s_val) * visualScale;
+      positions[j*3] = lx * e1x + ly * e2x;
+      positions[j*3+1] = lx * e1y + ly * e2y;
+      positions[j*3+2] = lx * e1z + ly * e2z;
+    }
+  } else {
+    // Unbound orbit: draw a circle of radius r
+    const e1x = px / r, e1y = py / r, e1z = pz / r;
+    const e2x = (ny * e1z - nz * e1y) / nLen;
+    const e2y = (nz * e1x - nx * e1z) / nLen;
+    const e2z = (nx * e1y - ny * e1x) / nLen;
+
+    for (let j = 0; j < segments; j++) {
+      const theta = (j / segments) * Math.PI * 2;
+      const c_val = Math.cos(theta), s_val = Math.sin(theta);
+      const lx = r * c_val * visualScale;
+      const ly = r * s_val * visualScale;
+      positions[j*3] = lx * e1x + ly * e2x;
+      positions[j*3+1] = lx * e1y + ly * e2y;
+      positions[j*3+2] = lx * e1z + ly * e2z;
+    }
   }
 
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
-  const c = new THREE.Color(COLOR[name]);
+  const colorStr = COLOR[name] || '#ffffff';
   const mat = new THREE.LineBasicMaterial({
-    color: c,
+    color: new THREE.Color(colorStr),
     transparent: true,
-    opacity: 0.25,
+    opacity: name === 'Moon' ? 0.30 : 0.25,
     depthWrite: false,
   });
   const line = new THREE.Line(geo, mat);
@@ -1847,40 +1771,16 @@ function createOrbitLine(name, index, currentState) {
   return line;
 }
 
-// Create orbit lines for planets (skip Sun; Moon gets a special Earth-centered orbit)
+// Create orbit lines for planets (skip Sun)
 for (let i = 0; i < BODY_NAMES.length; i++) {
   const name = BODY_NAMES[i];
   if (name === 'Sun') {
     planetOrbitLines[i] = null;
     continue;
   }
-  if (name === 'Moon') {
-    // Build a Moon orbit ring centered on Earth
-    const moonR = 0.00257; // ~384,400 km in AU
-    const segments = 128;
-    const moonPositions = new Float32Array(segments * 3);
-    for (let j = 0; j < segments; j++) {
-      const theta = (j / segments) * Math.PI * 2;
-      moonPositions[j*3] = moonR * Math.cos(theta);
-      moonPositions[j*3+1] = 0;
-      moonPositions[j*3+2] = moonR * Math.sin(theta);
-    }
-    const moonGeo = new THREE.BufferGeometry();
-    moonGeo.setAttribute('position', new THREE.BufferAttribute(moonPositions, 3));
-    const moonMat = new THREE.LineBasicMaterial({
-      color: new THREE.Color(COLOR.Moon),
-      transparent: true,
-      opacity: 0.30,
-      depthWrite: false,
-    });
-    const moonLine = new THREE.Line(moonGeo, moonMat);
-    scene.add(moonLine);
-    planetOrbitLines[i] = moonLine;
-    continue;
-  }
-  const line = createOrbitLine(name, i);
-  planetOrbitLines[i] = line;
+  planetOrbitLines[i] = createOrbitLine(name, i);
 }
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // P3: BUILD EXTRA MOONS
@@ -1893,8 +1793,7 @@ function buildMoons() {
 
     // Mesh
     const geo = new THREE.SphereGeometry(m.visualRadius, 16, 16);
-    const _mt = getConfigTex('Moon', 'tex');
-    const mat = new THREE.MeshPhongMaterial({ map: _mt || null, color: _mt ? 0xffffff : new THREE.Color(m.color), shininess: 10 });
+    const mat = new THREE.MeshPhongMaterial({ color: new THREE.Color(m.color), shininess: 10 });
     const mesh = new THREE.Mesh(geo, mat);
     scene.add(mesh);
     moonMeshes[i] = mesh;
@@ -2137,6 +2036,18 @@ function resetSim() {
   refreshEclipseList();
   e0 = sim.energy();
   l0 = sim.angularMomentum();
+
+  // Rebuild J2000 orbit lines
+  for (let i = 0; i < BODY_NAMES.length; i++) {
+    const name = BODY_NAMES[i];
+    if (name === 'Sun') continue;
+    if (planetOrbitLines[i]) {
+      scene.remove(planetOrbitLines[i]);
+      if (planetOrbitLines[i].geometry) planetOrbitLines[i].geometry.dispose();
+      if (planetOrbitLines[i].material) planetOrbitLines[i].material.dispose();
+    }
+    planetOrbitLines[i] = createOrbitLine(name, i);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2154,16 +2065,27 @@ function updateMeshes() {
   for (let i = 0; i < BODY_NAMES.length; i++) {
     const mesh = planetMeshes[i];
     if (!mesh) continue;
-    const x = pos[3*i], y = pos[3*i+1], z = pos[3*i+2];
-    mesh.position.set(x, y, z);
+    let x = pos[3*i], y = pos[3*i+1], z = pos[3*i+2];
 
     const name = BODY_NAMES[i];
+    if (name === 'Moon') {
+      const earthIdx = INDEX.Earth;
+      const ex = pos[3*earthIdx], ey = pos[3*earthIdx+1], ez = pos[3*earthIdx+2];
+      const dx = x - ex, dy = y - ey, dz = z - ez;
+      x = ex + dx * VISUAL_MOON_SCALE;
+      y = ey + dy * VISUAL_MOON_SCALE;
+      z = ez + dz * VISUAL_MOON_SCALE;
+    }
+    mesh.position.set(x, y, z);
 
-    // Rotate body by real rotation period from config (sim.dt is in days)
-    const _cfgRot = VISUAL_BODY_CONFIG[name];
-    const _period = _cfgRot ? (_cfgRot.rotationPeriodDays || 1.0) : 1.0;
-    const _rotSpeed = (2 * Math.PI) / _period; // rad per day
-    mesh.rotation.y += _rotSpeed * sim.dt;
+    // Rotate body by real rotation period from config (sim.time is in days)
+    if (name !== 'Sun') {
+      const _cfgRot = VISUAL_BODY_CONFIG[name];
+      const _period = _cfgRot ? (_cfgRot.rotationPeriodDays || 1.0) : 1.0;
+      mesh.rotation.y = (sim.time / _period) * 2 * Math.PI;
+    } else {
+      mesh.rotation.y = 0;
+    }
 
     // Update Sun glow position
     if (name === 'Sun' && mesh.userData.glow) {
@@ -2199,8 +2121,12 @@ function updateMeshes() {
       const _s = Math.max(_bs * 0.5, Math.min(_bs * 2, _d * 0.03));
       planetLabels[i].position.set(x, y + VISUAL_RADIUS_SCALE[name] * 0.8, z);
       planetLabels[i].visible = showLabels && _d < 150;
+      if (planetLabels[i].visible) {
+        planetLabels[i].material.opacity = THREE.MathUtils.clamp(1.0 - _d / 150, 0, 1);
+      }
       planetLabels[i].scale.set(_s * 1.2, _s * 0.3, 1);
     }
+
 
     // Update directional light to follow the Sun
     if (name === 'Sun') {
@@ -2250,8 +2176,14 @@ function updateMeshes() {
 
     // Label
     if (moonLabels[i]) {
-      moonLabels[i].position.set(px + localX, py + localY + m.visualRadius * 0.8, pz + localZ);
-      moonLabels[i].visible = showMoons;
+      const mx = px + localX, my = py + localY, mz = pz + localZ;
+      _tempVec3.set(mx, my, mz);
+      const _d = camera.position.distanceTo(_tempVec3);
+      moonLabels[i].position.set(mx, my + m.visualRadius * 0.8, mz);
+      moonLabels[i].visible = showMoons && _d < 150;
+      if (moonLabels[i].visible) {
+        moonLabels[i].material.opacity = THREE.MathUtils.clamp(1.0 - _d / 150, 0, 1);
+      }
     }
   });
 
@@ -2274,8 +2206,13 @@ function updateMeshes() {
 
     if (dwarfOrbitLines[i]) dwarfOrbitLines[i].visible = showDwarfs;
     if (dwarfLabels[i]) {
+      _tempVec3.set(x, y, z);
+      const _d = camera.position.distanceTo(_tempVec3);
       dwarfLabels[i].position.set(x, y + d.visualRadius * 1.5, z);
-      dwarfLabels[i].visible = showDwarfs;
+      dwarfLabels[i].visible = showDwarfs && _d < 150;
+      if (dwarfLabels[i].visible) {
+        dwarfLabels[i].material.opacity = THREE.MathUtils.clamp(1.0 - _d / 150, 0, 1);
+      }
     }
   });
 
@@ -2456,13 +2393,19 @@ function showInfoPanel(index) {
   const rotPeriod = cfg.rotationPeriodDays;
   const rotStr = rotPeriod ? (Math.abs(rotPeriod).toFixed(1) + ' days' + (rotPeriod < 0 ? ' (retrograde)' : '')) : 'N/A';
   const tiltStr = cfg.axialTiltDeg != null ? cfg.axialTiltDeg.toFixed(1) + '°' : 'N/A';
-  const atmoStr = cfg.atmosphere ? '✓ ' + cfg.atmosphere : (cfg.atmosphereColor ? '✓ (color: ' + cfg.atmosphereColor + ')' : 'N/A');
+  const atmoStr = cfg.atmosphere ? '✓' : '—';
+
+  const vx = sim.vel[3*index], vy = sim.vel[3*index+1], vz = sim.vel[3*index+2];
+  const velAuD = Math.hypot(vx, vy, vz);
+  const velKmS = velAuD * KM_PER_AU / 86400;
+  const velStr = velKmS.toFixed(2) + ' km/s (' + velAuD.toFixed(4) + ' AU/day)';
 
   infoPanel.innerHTML = `
     <div class="info-name" style="color:${COLOR[name]}">${name}</div>
     <div class="info-row"><span class="info-label">Radius</span><span class="info-val">${radiusKm} km</span></div>
     <div class="info-row"><span class="info-label">Mass</span><span class="info-val">${massStr}</span></div>
     <div class="info-row"><span class="info-label">Distance from Sun</span><span class="info-val">${distAu} AU</span></div>
+    <div class="info-row"><span class="info-label">Orbital Velocity</span><span class="info-val">${velStr}</span></div>
     <div class="info-row"><span class="info-label">Rotation</span><span class="info-val">${rotStr}</span></div>
     <div class="info-row"><span class="info-label">Axial Tilt</span><span class="info-val">${tiltStr}</span></div>
     <div class="info-row"><span class="info-label">Atmosphere</span><span class="info-val">${atmoStr}</span></div>
@@ -2570,13 +2513,111 @@ function finishGrab() {
     // Use current sim state (with new velocity) for the orbit line
     const curPos = [sim.pos[3*idx], sim.pos[3*idx+1], sim.pos[3*idx+2]];
     const curVel = [sim.vel[3*idx], sim.vel[3*idx+1], sim.vel[3*idx+2]];
-    planetOrbitLines[idx] = createOrbitLine(BODY_NAMES[idx], idx, {pos: curPos, vel: curVel});
+    const name = BODY_NAMES[idx];
+    if (name === 'Moon') {
+      const earthIdx = INDEX.Earth;
+      const earthPos = [sim.pos[3*earthIdx], sim.pos[3*earthIdx+1], sim.pos[3*earthIdx+2]];
+      const earthVel = [sim.vel[3*earthIdx], sim.vel[3*earthIdx+1], sim.vel[3*earthIdx+2]];
+      planetOrbitLines[idx] = createOrbitLine(name, idx, {
+        pos: curPos,
+        vel: curVel,
+        earthPos,
+        earthVel
+      });
+    } else {
+      planetOrbitLines[idx] = createOrbitLine(name, idx, {pos: curPos, vel: curVel});
+    }
   }
+
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// RESIZE
+// URL HASH STATE MANAGEMENT
 // ═══════════════════════════════════════════════════════════════════════════
+let updateHashTimeout = null;
+function updateUrlHash() {
+  if (updateHashTimeout) clearTimeout(updateHashTimeout);
+  updateHashTimeout = setTimeout(() => {
+    let focusName = '';
+    if (followedIndex >= 0 && followedIndex < BODY_NAMES.length) {
+      focusName = BODY_NAMES[followedIndex];
+    } else if (followedMoonIdx >= 0 && moonMeshes[followedMoonIdx]) {
+      focusName = MOON_DATA[followedMoonIdx].name;
+    } else if (followedDwarfIdx >= 0 && dwarfMeshes[followedDwarfIdx]) {
+      focusName = DWARF_DATA[followedDwarfIdx].name;
+    }
+    
+    const sl = document.getElementById('speed');
+    const speed = sl ? sl.value : '20';
+    const jd = (J2000_JD + sim.time).toFixed(4);
+    
+    const params = new URLSearchParams();
+    if (focusName) params.set('focus', focusName);
+    params.set('speed', speed);
+    params.set('time', jd);
+    
+    history.replaceState(null, '', '#' + params.toString());
+  }, 300);
+}
+
+function restoreUrlHash() {
+  const hash = window.location.hash.substring(1);
+  if (!hash) return;
+  const params = new URLSearchParams(hash);
+  
+  // 1. Focus
+  const focus = params.get('focus');
+  if (focus) {
+    let found = false;
+    for (let i = 0; i < BODY_NAMES.length; i++) {
+      if (BODY_NAMES[i].toLowerCase() === focus.toLowerCase()) {
+        focusSelect.value = String(i);
+        focusSelect.dispatchEvent(new Event('change'));
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      for (let i = 0; i < MOON_DATA.length; i++) {
+        if (MOON_DATA[i].name.toLowerCase() === focus.toLowerCase()) {
+          focusSelect.value = 'moon_' + i;
+          focusSelect.dispatchEvent(new Event('change'));
+          found = true;
+          break;
+        }
+      }
+    }
+    if (!found) {
+      for (let i = 0; i < DWARF_DATA.length; i++) {
+        if (DWARF_DATA[i].name.toLowerCase() === focus.toLowerCase()) {
+          focusSelect.value = 'dwarf_' + i;
+          focusSelect.dispatchEvent(new Event('change'));
+          found = true;
+          break;
+        }
+      }
+    }
+  }
+  
+  // 2. Speed
+  const speed = params.get('speed');
+  if (speed) {
+    const sl = document.getElementById('speed');
+    if (sl) {
+      sl.value = speed;
+      sl.dispatchEvent(new Event('input'));
+    }
+  }
+
+  // 3. Time (JD)
+  const timeVal = params.get('time');
+  if (timeVal) {
+    const jd = parseFloat(timeVal);
+    if (!isNaN(jd)) {
+      setSimTimeJD(jd);
+    }
+  }
+}
 
 function onResize() {
   const w = container.clientWidth;
@@ -2633,6 +2674,7 @@ function animate() {
       finder.feed(sim);
     }
     updateMeshes();
+    updateUrlHash();
 
     // Follow mode: continuously update camera target to follow selected body
     if (followedIndex >= 0 && followedIndex < BODY_NAMES.length) {
@@ -2686,8 +2728,7 @@ function animate() {
     if (sunMesh.material.uniforms && sunMesh.material.uniforms.time) {
       sunMesh.material.uniforms.time.value = performance.now() * 0.001;
     }
-    // Slow rotation for visual dynamism
-    sunMesh.rotation.y += 0.001;
+    // Sun rotation disabled to keep it stationary
     if (sunMesh.userData.glow) {
       const glow = sunMesh.userData.glow;
       // Pulse the glow
@@ -2760,7 +2801,7 @@ function animate() {
   }
 
   // Framerate limiter: allow render every frame (no skip — keep smooth on high-refresh displays)
-  composer.render(scene, camera);
+  composer.render();
 
   requestAnimationFrame(animate);
 }
@@ -2799,6 +2840,7 @@ realtimeBtn.addEventListener('click', () => {
 
 document.getElementById('speed').addEventListener('input', (ev) => {
   stepsPerFrame = Number(ev.target.value);
+  updateUrlHash();
 });
 
 document.getElementById('btn-reset').addEventListener('click', () => {
@@ -2808,17 +2850,28 @@ document.getElementById('btn-reset').addEventListener('click', () => {
 });
 
 // Time travel presets
-const J2000_DAY_MS = 24 * 3600 * 1000;
 function setSimTimeJD(jd) {
-  const dt_days = (jd - J2000_JD) * 86400 / DT; // DT in seconds, time in days
+  // DT is in days (0.1), jd-j2000 is in days, so steps = days / DT
+  const daysDiff = jd - J2000_JD;
+  const totalSteps = Math.abs(Math.round(daysDiff / DT));
   const { pos, vel } = seedState();
   sim = new NBody(pos, vel, GM, DT);
-  const steps = Math.abs(Math.round(dt_days));
-  const stepDir = dt_days >= 0 ? 1 : -1;
-  for (let i = 0; i < steps; i++) {
-    sim.step(stepDir);
+  const stepDir = daysDiff >= 0 ? 1 : -1;
+  // Batch-process in chunks to avoid freeze on large jumps
+  const CHUNK = 50000;
+  for (let offset = 0; offset < totalSteps; offset += CHUNK) {
+    const batch = Math.min(CHUNK, totalSteps - offset);
+    for (let i = 0; i < batch; i++) {
+      sim.dt = stepDir < 0 ? -DT : DT;
+      sim.step();
+    }
   }
-  sim.time = dt_days * DT;
+  sim.time = daysDiff;
+  // Reset eclipse detector
+  finder = new EclipseFinder(J2000_JD, onEclipse);
+  finder.feed(sim);
+  eclipseList.length = 0;
+  refreshEclipseList();
   updateMeshes();
   document.getElementById('chk-trails').dispatchEvent(new Event('change'));
 }
@@ -2915,6 +2968,7 @@ focusSelect.addEventListener('change', (ev) => {
     const idx = Number(val);
     if (idx >= 0) followedIndex = idx;
   }
+  updateUrlHash();
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -3079,6 +3133,7 @@ camBtn.addEventListener('click',()=>{toggleCamHands();});
 // ═══════════════════════════════════════════════════════════════════════════
 
 resetSim();
+restoreUrlHash();
 updateMeshes();
 controls.target.set(sim.pos[3*INDEX.Earth], sim.pos[3*INDEX.Earth+1], sim.pos[3*INDEX.Earth+2]);
 
@@ -3086,15 +3141,28 @@ controls.target.set(sim.pos[3*INDEX.Earth], sim.pos[3*INDEX.Earth+1], sim.pos[3*
 camera.position.set(2, 3, 6);
 controls.update();
 
-loadConfigTextures().then(() => animate());
+// Start the render loop UNCONDITIONALLY. Textures are an enhancement, not a
+// prerequisite — bodies render with fallback colors until maps arrive.
+__solarSysLoaded = true;
+animate();
 
-// Show Three.js-loaded confirmation
-console.log('✅ Solar System Simulator loaded with Three.js');
+function _finishLoading() {
   // Hide loading spinner
   const ls = document.getElementById('loading-spinner');
   if (ls) ls.style.display = 'none';
+  console.log('✅ Solar System Simulator loaded with Three.js');
+}
 
-__solarSysLoaded = true;
+loadConfigTextures()
+  .then(() => {
+    _finishLoading();
+  })
+  .catch(err => {
+    // Even if texture loading rejects, the scene is already animating with
+    // fallback colors — just clear the spinner and log the issue.
+    console.warn('⚠️ Texture loading failed; continuing with fallback colors:', err);
+    _finishLoading();
+  });
 
 // ═══════════════════════════════════════════════════════════════════════════
 // RESET VIEW BUTTON
