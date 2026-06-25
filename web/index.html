@@ -1725,7 +1725,7 @@ function createOrbitLine(name, index, currentState) {
     // e2 = h_hat x e1
     const e2x = (ny * e1z - nz * e1y) / h;
     const e2y = (nz * e1x - nx * e1z) / h;
-    const e2z = (hx * e1y - ny * e1x) / h;
+    const e2z = (nx * e1y - ny * e1x) / h;
 
     const cf = a * e;
 
