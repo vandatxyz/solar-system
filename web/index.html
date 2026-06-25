@@ -493,7 +493,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 import * as THREE from 'three';
 import { NBody, removeBarycentreDrift } from './physics.js';
-import { EclipseFinder, currentAlignment } from './eclipse.js';
+import { EclipseFinder, currentAlignment, jdToCalendar } from './eclipse.js';
 import {
   KM_PER_AU,
   J2000_JD,
